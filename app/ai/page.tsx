@@ -314,12 +314,18 @@ export default function AiHubPage() {
       {/* 1. SIDEBAR - CHAT THREADS */}
       <AnimatePresence>
         {isHistoryOpen && (
-          <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 280, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            className="shrink-0 bg-white border-r border-slate-200/80 flex flex-col justify-between h-screen z-20 relative"
-          >
+          <>
+            {/* Mobile Sidebar Backdrop */}
+            <div
+              onClick={() => setIsHistoryOpen(false)}
+              className="fixed inset-0 bg-slate-900/10 backdrop-blur-xs z-35 md:hidden"
+            />
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 280, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              className="fixed md:relative top-0 left-0 h-screen shrink-0 bg-white border-r border-slate-200/80 flex flex-col justify-between z-40 shadow-lg md:shadow-none"
+            >
             {/* Sidebar Header */}
             <div className="p-4 border-b border-slate-150 flex flex-col gap-4">
               <div className="flex items-center justify-between">
@@ -417,8 +423,9 @@ export default function AiHubPage() {
               </div>
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </>
+      )}
+    </AnimatePresence>
 
       {/* 2. MAIN HUB WORKSPACE */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative bg-slate-50">
@@ -547,7 +554,7 @@ export default function AiHubPage() {
             </div>
           ) : (
             // Active Conversation bubbles
-            <div className="max-w-2xl mx-auto space-y-6 pb-32">
+            <div className="max-w-2xl mx-auto space-y-6 pb-40 md:pb-32">
               {messages.map((msg, index) => (
                 <div
                   key={index}
@@ -682,7 +689,7 @@ export default function AiHubPage() {
                   type="text"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Gửi câu hỏi bài tập Toán, Lý, Hóa, Anh... Đính kèm ảnh đề bài hoặc tệp ôn tập."
+                  placeholder="Hỏi bài tập Toán, Lý, Hóa... hoặc đính kèm ảnh đề."
                   className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-xs py-1.5 placeholder-slate-400 text-slate-805 focus:outline-none font-semibold"
                   disabled={isSending}
                 />
