@@ -10,9 +10,17 @@ import type { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../types/supabase';
 
+const getSanitizedUrl = (url: string | undefined): string => {
+  if (!url) return 'https://placeholder.supabase.co';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return `https://${url}`;
+  }
+  return url;
+};
+
 // Initialise a client that can read the auth cookie / bearer token.
 const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+  getSanitizedUrl(process.env.NEXT_PUBLIC_SUPABASE_URL),
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
 );
 

@@ -9,9 +9,17 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../types/supabase'; // adjust path if you have a generated types file
 
+const getSanitizedUrl = (url: string | undefined): string => {
+  if (!url) return 'https://placeholder.supabase.co';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return `https://${url}`;
+  }
+  return url;
+};
+
 // Initialise a server‑side client (service role) – never expose this to the browser.
 const supabaseAdmin: SupabaseClient<Database> = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+  getSanitizedUrl(process.env.NEXT_PUBLIC_SUPABASE_URL),
   process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-role'
 );
 
