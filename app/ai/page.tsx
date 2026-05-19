@@ -245,9 +245,14 @@ export default function AiHubPage() {
 
         if (geminiRes.success) {
           setMessages((prev) => [...prev, geminiRes.message]);
+        } else {
+          toast.error(geminiRes.error || "Gặp lỗi kết nối AI.");
+          // Remove the user's optimistic message since it failed
+          setMessages((prev) => prev.slice(0, -1));
         }
       } catch (err: any) {
         toast.error(err.message || "Gặp lỗi kết nối AI.");
+        setMessages((prev) => prev.slice(0, -1));
       } finally {
         setIsSending(false);
       }
@@ -291,9 +296,13 @@ export default function AiHubPage() {
       if (res.success) {
         // Fetch accurate state from backend
         await loadMessages(targetChatId!);
+      } else {
+        toast.error(res.error || "Không thể gửi.");
+        setMessages((prev) => prev.slice(0, -1));
       }
     } catch (err: any) {
       toast.error(err.message || "Không thể gửi.");
+      setMessages((prev) => prev.slice(0, -1));
     } finally {
       setIsSending(false);
     }

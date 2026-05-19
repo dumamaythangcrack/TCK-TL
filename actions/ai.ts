@@ -115,22 +115,40 @@ export async function getAiMessages(chatId: string) {
  * Implements extreme Vietnamese teacher logic for Math, Literature, English, Physics, Chemistry, Biology.
  */
 export async function sendAiChatMessage(data: ChatMessageRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    throw new Error("Unauthorized. Please log in.");
+  if (!process.env.GEMINI_API_KEY) {
+    return {
+      success: false,
+      error: "Hệ thống chưa cấu hình khóa API Gemini (GEMINI_API_KEY). Vui lòng thêm biến môi trường này trong trang quản trị Vercel.",
+    };
   }
 
-  // Pre-fetch previous message history to maintain conversational context
-  const { data: history, error: historyError } = await supabase
-    .from("ai_messages")
-    .select("role, content")
-    .eq("chat_id", data.chatId)
-    .order("created_at", { ascending: true });
+  const isGuest = data.chatId === "guest-session";
+  let user: any = null;
 
-  if (historyError) {
-    console.error("History fetch error:", historyError);
+  if (!isGuest) {
+    const supabase = await createClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) {
+      return { success: false, error: "Unauthorized. Vui lòng đăng nhập." };
+    }
+    user = authUser;
+  }
+
+  let history: any[] = [];
+  if (!isGuest) {
+    // Pre-fetch previous message history to maintain conversational context
+    const supabase = await createClient();
+    const { data: fetchedHistory, error: historyError } = await supabase
+      .from("ai_messages")
+      .select("role, content")
+      .eq("chat_id", data.chatId)
+      .order("created_at", { ascending: true });
+
+    if (historyError) {
+      console.error("History fetch error:", historyError);
+    } else {
+      history = fetchedHistory || [];
+    }
   }
 
   // Build the contents block for Gemini
@@ -211,6 +229,13 @@ Quy tắc giảng dạy:
 
     const aiResponseText = response.text || "AI không thể đưa ra câu trả lời vào lúc này.";
 
+    if (isGuest) {
+      return {
+        success: true,
+        message: { role: "model", content: aiResponseText },
+      };
+    }
+
     // Insert user message and AI message into DB
     const adminSupabase = await createAdminClient();
     
@@ -247,7 +272,10 @@ Quy tắc giảng dạy:
     };
   } catch (error: any) {
     console.error("Gemini Chat Action Error:", error);
-    throw new Error(error.message || "Failed to communicate with AI model.");
+    return {
+      success: false,
+      error: error.message || "Gặp lỗi khi kết nối với mô hình AI Gemini.",
+    };
   }
 }
 
