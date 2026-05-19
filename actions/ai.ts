@@ -218,14 +218,26 @@ Quy tắc giảng dạy:
     systemInstruction += "\n\n[Chế độ: Tạo ghi chú]: Hãy biến tài liệu học tập hoặc chủ đề này thành một trang ghi chú học tập (Cheat sheet / Study Guide) cực kỳ khoa học, dễ ghi nhớ.";
   }
 
+  let response;
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: contents,
-      config: {
-        systemInstruction,
-      },
-    });
+    try {
+      response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: contents,
+        config: {
+          systemInstruction,
+        },
+      });
+    } catch (firstError: any) {
+      console.warn("Primary model (gemini-2.5-flash) failed, trying fallback model gemini-1.5-flash...", firstError);
+      response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: contents,
+        config: {
+          systemInstruction,
+        },
+      });
+    }
 
     const aiResponseText = response.text || "AI không thể đưa ra câu trả lời vào lúc này.";
 

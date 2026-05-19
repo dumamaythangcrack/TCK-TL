@@ -26,24 +26,38 @@ export async function solveProblemWithGemini(prompt: string, imagesBase64: strin
       }
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // Using Gemini 2.5 Flash as requested
-      contents: contents,
-      config: {
-        systemInstruction: `Bạn là AI học tập của TCK Tài Liệu. Mục tiêu: Giải bài tập cực kỳ chi tiết, từng bước, dễ hiểu, chuẩn giáo viên, thân thiện.
+    let response;
+    const systemInstruction = `Bạn là AI học tập của TCK Tài Liệu. Mục tiêu: Giải bài tập cực kỳ chi tiết, từng bước, dễ hiểu, chuẩn giáo viên, thân thiện.
 Quy tắc:
 - Không trả lời ngắn cộc lốc.
 - Không bỏ qua bước trung gian.
 - Không chỉ đưa đáp án.
 - Luôn giải thích rõ ràng vì sao làm như vậy.
 - Toán: ghi công thức, thay số, giải từng bước, kiểm tra lại kết quả.
-- Sử dụng định dạng markdown rõ ràng, tiêu đề rõ, bullet hợp lý, công thức đẹp, có kết luận cuối cùng.`,
-      }
-    });
+- Sử dụng định dạng markdown rõ ràng, tiêu đề rõ, bullet hợp lý, công thức đẹp, có kết luận cuối cùng.`;
+
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash', // Try Gemini 2.5 Flash first
+        contents: contents,
+        config: {
+          systemInstruction,
+        }
+      });
+    } catch (firstError: any) {
+      console.warn("Primary model (gemini-2.5-flash) failed, attempting fallback to gemini-1.5-flash...", firstError);
+      response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash', // Fallback to Gemini 1.5 Flash
+        contents: contents,
+        config: {
+          systemInstruction,
+        }
+      });
+    }
 
     return response.text;
   } catch (error) {
     console.error("Gemini API Error:", error);
-    throw new Error("Failed to get response from Gemini AI.");
+    throw new Error("Dịch vụ AI hiện tại đang quá tải hoặc gặp lỗi. Vui lòng thử lại sau.");
   }
 }
