@@ -27,7 +27,7 @@ export async function solveProblemWithGemini(prompt: string, imagesBase64: strin
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.0-flash', // Using Gemini 3.0 Flash as requested
+      model: 'gemini-2.5-flash', // Using Gemini 2.5 Flash as requested
       contents: contents,
       config: {
         systemInstruction: `Bạn là AI học tập của TCK Tài Liệu. Mục tiêu: Giải bài tập cực kỳ chi tiết, từng bước, dễ hiểu, chuẩn giáo viên, thân thiện.
