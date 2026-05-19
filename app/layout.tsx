@@ -40,7 +40,7 @@ export default function RootLayout({
       lang="vi"
       className={`${outfit.variable} h-full antialiased font-sans`}
     >
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
+      <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
         <Toaster richColors theme="light" position="top-center" closeButton />
       </body>

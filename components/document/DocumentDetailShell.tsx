@@ -214,45 +214,45 @@ export default function DocumentDetailShell({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/40 text-slate-850 p-4 md:p-8 relative">
+    <div className="min-h-screen bg-slate-50/40 text-slate-850 py-8 px-4 sm:px-6 relative">
       {/* Subtle Background Glows */}
-      <div className="absolute top-10 left-10 h-96 w-96 rounded-full bg-blue-100/5 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-10 h-96 w-96 rounded-full bg-indigo-100/5 blur-3xl pointer-events-none" />
+      <div className="absolute top-10 left-10 h-96 w-96 rounded-full bg-slate-200/20 blur-3xl pointer-events-none" />
+      <div className="absolute bottom-10 right-10 h-96 w-96 rounded-full bg-slate-300/10 blur-3xl pointer-events-none" />
 
-      <div className="max-w-5xl mx-auto space-y-6 relative z-10">
+      <div className="max-w-5xl mx-auto space-y-6 relative z-10 animate-fade-in">
         {/* Document Title & Meta Hero Panel */}
-        <div className="bg-white border border-slate-200/60 rounded-2xl p-6 md:p-8 space-y-4 shadow-3xs">
-          <div className="flex flex-wrap gap-2 text-[10px] font-bold">
-            <span className="bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-0.5 rounded-lg uppercase tracking-wider">
+        <div className="bg-white border border-slate-200/50 rounded-2xl p-6 md:p-8 space-y-4 shadow-3xs">
+          <div className="flex flex-wrap gap-1.5 text-[9px] font-bold">
+            <span className="bg-slate-100/80 text-slate-905 border border-slate-200/40 px-2.5 py-0.5 rounded-md uppercase tracking-wider">
               {bundle.category?.name || "Tài liệu học tập"}
             </span>
-            <span className="bg-slate-50 text-slate-650 px-2.5 py-0.5 rounded-lg border border-slate-150">
+            <span className="bg-slate-50/80 text-slate-600 px-2.5 py-0.5 rounded-md border border-slate-200/40">
               {bundle.grade?.name || "Lớp học"}
             </span>
-            <span className="bg-slate-50 text-slate-650 px-2.5 py-0.5 rounded-lg border border-slate-150">
+            <span className="bg-slate-50/80 text-slate-600 px-2.5 py-0.5 rounded-md border border-slate-200/40">
               Môn {bundle.subject?.name || "Môn học"}
             </span>
           </div>
 
-          <h1 className="text-xl md:text-3xl font-extrabold tracking-tight text-slate-900 leading-tight">
+          <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-slate-905 leading-snug">
             {bundle.title}
           </h1>
 
-          <p className="text-xs md:text-sm text-slate-500 leading-relaxed max-w-4xl font-medium">
+          <p className="text-xs md:text-sm text-slate-550 leading-relaxed max-w-4xl font-semibold">
             {bundle.description || "Không có mô tả chi tiết."}
           </p>
 
           {/* Interaction Bar & Uploader info */}
           <div className="flex flex-wrap justify-between items-center border-t border-slate-100 pt-5 gap-4">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700 text-xs font-bold shrink-0">
+              <div className="h-8 w-8 rounded-full bg-slate-50 border border-slate-150 flex items-center justify-center text-slate-750 text-xs font-bold shrink-0">
                 {bundle.uploader?.full_name?.charAt(0).toUpperCase() || "U"}
               </div>
               <div>
                 <p className="font-bold text-slate-850 text-xs">
                   Đăng bởi: {bundle.uploader?.full_name || "Thành viên TCK"}
                 </p>
-                <p className="text-[10px] text-slate-400 font-semibold">
+                <p className="text-[9px] text-slate-400 font-semibold">
                   {new Date(bundle.created_at).toLocaleDateString()} • {bundle.uploader?.role}
                 </p>
               </div>
@@ -263,15 +263,15 @@ export default function DocumentDetailShell({
                   onClick={handleFollow}
                   variant="ghost"
                   size="sm"
-                  className="text-[10px] text-slate-600 hover:text-slate-900 h-8 px-2.5 flex items-center gap-1 hover:bg-slate-100 rounded-xl shrink-0 ml-2 font-bold border border-slate-200/60"
+                  className="text-[9px] text-slate-655 hover:text-slate-905 h-7 px-2.5 flex items-center gap-1 hover:bg-slate-50 rounded-lg shrink-0 ml-2 font-bold border border-slate-200/40 transition-all"
                 >
                   {followed ? (
                     <>
-                      <UserCheck className="h-3.5 w-3.5 text-slate-500" /> Đã theo dõi
+                      <UserCheck className="h-3 w-3 text-slate-550" /> Đã theo dõi
                     </>
                   ) : (
                     <>
-                      <UserPlus className="h-3.5 w-3.5 text-slate-550" /> Theo dõi
+                      <UserPlus className="h-3 w-3 text-slate-550" /> Theo dõi
                     </>
                   )}
                 </Button>
@@ -283,22 +283,22 @@ export default function DocumentDetailShell({
               <Button
                 onClick={handleLike}
                 variant="outline"
-                className={`border-slate-200 hover:bg-slate-50 bg-white flex items-center gap-1.5 h-9 rounded-xl text-xs font-bold transition-all ${
-                  liked ? "text-slate-900 border-slate-400 bg-slate-50" : "text-slate-600"
+                className={`border-slate-200 hover:bg-slate-50 hover:border-slate-350 bg-white flex items-center gap-1.5 h-8 rounded-xl text-[11px] font-bold transition-all shadow-3xs ${
+                  liked ? "text-slate-905 border-slate-400 bg-slate-50" : "text-slate-655"
                 }`}
               >
-                <Heart className={`h-4 w-4 ${liked ? "fill-slate-900 text-slate-900" : ""}`} />
+                <Heart className={`h-3.5 w-3.5 ${liked ? "fill-slate-900 text-slate-905" : ""}`} />
                 Thích ({likeCount})
               </Button>
 
               <Button
                 onClick={handleBookmark}
                 variant="outline"
-                className={`border-slate-200 hover:bg-slate-50 bg-white flex items-center gap-1.5 h-9 rounded-xl text-xs font-bold transition-all ${
-                  bookmarked ? "text-slate-900 border-slate-400 bg-slate-50" : "text-slate-600"
+                className={`border-slate-200 hover:bg-slate-50 hover:border-slate-350 bg-white flex items-center gap-1.5 h-8 rounded-xl text-[11px] font-bold transition-all shadow-3xs ${
+                  bookmarked ? "text-slate-905 border-slate-400 bg-slate-50" : "text-slate-655"
                 }`}
               >
-                <Bookmark className={`h-4 w-4 ${bookmarked ? "fill-slate-900 text-slate-900" : ""}`} />
+                <Bookmark className={`h-3.5 w-3.5 ${bookmarked ? "fill-slate-905 text-slate-905" : ""}`} />
                 Lưu học tập
               </Button>
 
@@ -306,9 +306,9 @@ export default function DocumentDetailShell({
                 onClick={handleReport}
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-xl border border-slate-200/60"
+                className="h-8 w-8 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-xl border border-slate-200/50 shadow-3xs"
               >
-                <AlertTriangle className="h-4 w-4" />
+                <AlertTriangle className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>

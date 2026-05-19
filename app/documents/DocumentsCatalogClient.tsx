@@ -120,26 +120,26 @@ export default function DocumentsCatalogClient({
   return (
     <div className="min-h-screen bg-slate-50/40 text-slate-850 flex flex-col justify-between relative font-sans">
       
-      {/* Navbar */}
-      <header className="sticky top-0 z-40 w-full border-b border-slate-200/55 bg-white/80 backdrop-blur-md transition-all duration-300">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 h-14 flex items-center justify-between">
+      {/* 1. STICKY SLICK NAVBAR */}
+      <header className="sticky top-0 z-40 w-full border-b border-slate-200/50 bg-white/80 backdrop-blur-md transition-all duration-300">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center gap-2 cursor-pointer group">
-              <div className="h-7 w-7 rounded-lg bg-slate-900 flex items-center justify-center font-extrabold text-xs text-white shadow-xs group-hover:bg-slate-800 transition-colors">
-                TCK
+              <div className="h-6 w-6 rounded-lg bg-slate-900 flex items-center justify-center font-black text-[10px] text-white shadow-2xs group-hover:bg-slate-800 transition-colors">
+                T
               </div>
-              <span className="font-extrabold text-xs tracking-wider text-slate-900 uppercase">
-                Tài Liệu
+              <span className="font-extrabold text-xs tracking-tight text-slate-905 uppercase">
+                TCK <span className="font-normal text-slate-450 lowercase">tài liệu</span>
               </span>
             </Link>
 
-            <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-550">
-              <Link href="/documents" className="text-slate-900 hover:text-slate-950 transition flex items-center gap-1.5 font-bold">
-                <Compass className="h-3.5 w-3.5" />
+            <nav className="hidden md:flex items-center gap-4 text-xs font-semibold text-slate-550">
+              <Link href="/documents" className="text-slate-905 hover:text-slate-905 transition-colors flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-slate-100/80">
+                <Compass className="h-3.5 w-3.5 text-slate-800" />
                 Kho Tài Liệu
               </Link>
-              <Link href="/ai" className="hover:text-slate-900 transition flex items-center gap-1.5">
-                <Brain className="h-3.5 w-3.5 text-slate-450" />
+              <Link href="/ai" className="hover:text-slate-900 transition-colors flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-slate-50">
+                <Brain className="h-3.5 w-3.5 text-slate-400" />
                 AI Hub
               </Link>
             </nav>
@@ -154,7 +154,7 @@ export default function DocumentsCatalogClient({
                 }
                 setIsUploadOpen(true);
               }}
-              className="bg-slate-900 hover:bg-slate-850 text-white font-bold text-xs px-3.5 py-1.5 h-8 rounded-xl flex items-center gap-1.5 shadow-xs transition-all duration-200"
+              className="bg-slate-905 hover:bg-slate-800 text-white font-bold text-xs px-3.5 py-1.5 h-8 rounded-xl flex items-center gap-1.5 shadow-2xs transition-all duration-200"
             >
               <Upload className="h-3.5 w-3.5" />
               Đăng tài liệu
@@ -162,15 +162,15 @@ export default function DocumentsCatalogClient({
 
             {isLoggedIn ? (
               <Link href="/dashboard">
-                <Button variant="outline" className="border-slate-200 hover:bg-slate-50 text-slate-700 text-xs px-3 h-8 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <Button variant="outline" className="border-slate-200 hover:bg-slate-50 hover:border-slate-350 text-slate-700 text-xs px-3 h-8 rounded-xl flex items-center gap-1.5 shadow-3xs transition-all duration-200">
                   <User className="h-3.5 w-3.5 text-slate-450" />
                   Dashboard
                 </Button>
               </Link>
             ) : (
               <Link href="/login">
-                <Button variant="outline" className="border-slate-200 hover:bg-slate-50 text-slate-700 text-xs px-3 h-8 rounded-xl flex items-center gap-1.5 shadow-2xs">
-                  <LogIn className="h-3.5 w-3.5 text-slate-450" />
+                <Button variant="outline" className="border-slate-200 hover:bg-slate-50 hover:border-slate-350 text-slate-700 text-xs px-3 h-8 rounded-xl flex items-center gap-1.5 shadow-3xs transition-all duration-200">
+                  <LogIn className="h-3.5 w-3.5 text-slate-455" />
                   Đăng nhập
                 </Button>
               </Link>
@@ -180,21 +180,21 @@ export default function DocumentsCatalogClient({
       </header>
 
       {/* Catalog Workspace */}
-      <main className="max-w-6xl mx-auto px-4 md:px-8 py-8 w-full flex-1 flex flex-col lg:flex-row gap-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 w-full flex-1 flex flex-col lg:flex-row gap-8">
         
         {/* Left Filter Sidebar - Google Drive/Notion Style */}
         <aside className="w-full lg:w-60 shrink-0 space-y-5">
           
           {/* Categories Sidebar navigation */}
-          <div className="bg-white border border-slate-200/60 rounded-2xl p-4 space-y-3 shadow-3xs">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Danh Mục Tài Liệu</h3>
+          <div className="bg-white border border-slate-200/50 p-4 rounded-2xl space-y-3 shadow-3xs">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Danh Mục Tài Liệu</h3>
             <div className="space-y-1">
               <button
                 onClick={() => handleCategorySelect("all")}
-                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+                className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
                   selectedCategory === "all"
-                    ? "bg-slate-100 text-slate-900"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-slate-100/80 text-slate-905"
+                    : "text-slate-550 hover:bg-slate-50/80 hover:text-slate-905"
                 }`}
               >
                 <Compass className="h-3.5 w-3.5" />
@@ -204,10 +204,10 @@ export default function DocumentsCatalogClient({
                 <button
                   key={cat.id}
                   onClick={() => handleCategorySelect(cat.id)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition truncate ${
+                  className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all truncate ${
                     selectedCategory === cat.id
-                      ? "bg-slate-100 text-slate-900"
-                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                      ? "bg-slate-100/80 text-slate-905"
+                      : "text-slate-550 hover:bg-slate-50/80 hover:text-slate-905"
                   }`}
                 >
                   <BookMarked className="h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -218,15 +218,15 @@ export default function DocumentsCatalogClient({
           </div>
 
           {/* Grades Filter */}
-          <div className="bg-white border border-slate-200/60 rounded-2xl p-4 space-y-3 shadow-3xs">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Khối Lớp</h3>
-            <div className="grid grid-cols-2 gap-1 text-[10px]">
+          <div className="bg-white border border-slate-200/50 rounded-2xl p-4 space-y-3 shadow-3xs">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Khối Lớp</h3>
+            <div className="grid grid-cols-2 gap-1 text-[9px]">
               <button
                 onClick={() => handleGradeSelect("all")}
-                className={`py-1 px-1.5 rounded-lg font-bold border transition ${
+                className={`py-1 px-1.5 rounded-xl font-bold border transition-all ${
                   selectedGrade === "all"
-                    ? "bg-slate-900 border-slate-950 text-white"
-                    : "bg-slate-50 border-slate-200/60 text-slate-650 hover:bg-slate-100/60"
+                    ? "bg-slate-905 border-slate-950 text-white shadow-2xs"
+                    : "bg-slate-50/80 border-slate-200/40 text-slate-655 hover:bg-slate-100/80"
                 }`}
               >
                 Tất cả lớp
@@ -235,10 +235,10 @@ export default function DocumentsCatalogClient({
                 <button
                   key={g.id}
                   onClick={() => handleGradeSelect(g.id)}
-                  className={`py-1 px-1.5 rounded-lg font-bold border transition truncate ${
+                  className={`py-1.5 px-1.5 rounded-xl font-bold border transition-all truncate ${
                     selectedGrade === g.id
-                      ? "bg-slate-900 border-slate-950 text-white"
-                      : "bg-slate-50 border-slate-200/60 text-slate-650 hover:bg-slate-100/60"
+                      ? "bg-slate-905 border-slate-950 text-white shadow-2xs"
+                      : "bg-slate-50/80 border-slate-200/40 text-slate-655 hover:bg-slate-100/80"
                   }`}
                 >
                   {g.name}
@@ -253,21 +253,21 @@ export default function DocumentsCatalogClient({
         <section className="flex-1 space-y-5">
           
           {/* Top Search Gateway & Sorting Controls */}
-          <div className="bg-white border border-slate-200/60 p-4 rounded-2xl shadow-3xs space-y-4">
+          <div className="bg-white border border-slate-200/50 p-4 rounded-2xl shadow-3xs space-y-4">
             <div className="flex flex-col md:flex-row gap-3">
               <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-450" />
                 <Input
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   placeholder="Tìm kiếm tài liệu ôn thi đại học, đề thi kiểm tra, giáo án..."
-                  className="pl-9 h-10 bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-450 focus-visible:ring-1 focus-visible:ring-slate-400 focus-visible:border-slate-400 rounded-xl text-xs"
+                  className="pl-9 h-10 bg-slate-50/50 border-slate-200/80 text-slate-800 placeholder-slate-400 focus-visible:ring-2 focus-visible:ring-slate-100/55 focus-visible:border-slate-400 rounded-xl text-xs"
                 />
               </div>
 
               <div className="flex gap-2">
                 <Select value={sortBy} onValueChange={(val: any) => handleSortChange(val)}>
-                  <SelectTrigger className="bg-slate-50 border-slate-200 text-slate-700 rounded-xl h-10 text-[11px] w-[130px]">
+                  <SelectTrigger className="bg-slate-50/50 border-slate-200/80 text-slate-700 rounded-xl h-10 text-[10px] w-[130px] font-semibold">
                     <SelectValue placeholder="Sắp xếp" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-slate-200 text-slate-800 text-xs">
@@ -283,10 +283,10 @@ export default function DocumentsCatalogClient({
             <div className="flex flex-wrap gap-1 border-t border-slate-100 pt-3">
               <button
                 onClick={() => handleSubjectSelect("all")}
-                className={`px-3 py-1 rounded-full text-[10px] font-bold transition ${
+                className={`px-3 py-1 rounded-full text-[9px] font-bold transition-all ${
                   selectedSubject === "all"
-                    ? "bg-slate-900 text-white shadow-2xs"
-                    : "bg-slate-50 hover:bg-slate-100 text-slate-550 border border-slate-200/50"
+                    ? "bg-slate-905 text-white shadow-2xs"
+                    : "bg-slate-50/80 hover:bg-slate-100/80 text-slate-655 border border-slate-200/40"
                 }`}
               >
                 Tất cả môn học
@@ -295,10 +295,10 @@ export default function DocumentsCatalogClient({
                 <button
                   key={sub.id}
                   onClick={() => handleSubjectSelect(sub.id)}
-                  className={`px-3 py-1 rounded-full text-[10px] font-bold transition ${
+                  className={`px-3 py-1 rounded-full text-[9px] font-bold transition-all ${
                     selectedSubject === sub.id
-                      ? "bg-slate-900 text-white shadow-2xs"
-                      : "bg-slate-50 hover:bg-slate-100 text-slate-550 border border-slate-200/50"
+                      ? "bg-slate-905 text-white shadow-2xs"
+                      : "bg-slate-50/80 hover:bg-slate-100/80 text-slate-655 border border-slate-200/40"
                   }`}
                 >
                   {sub.name}
@@ -326,25 +326,25 @@ export default function DocumentsCatalogClient({
               {documents.map((doc) => (
                 <div
                   key={doc.id}
-                  className="bg-white border border-slate-200/55 rounded-2xl p-5 flex flex-col justify-between gap-5 hover:border-slate-300 hover:shadow-[0_8px_24px_rgba(0,0,0,0.02)] transition-all duration-300 group shadow-3xs"
+                  className="bg-white border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between gap-5 hover:border-slate-350 hover:shadow-2xs transition-all duration-300 group shadow-3xs"
                 >
                   <div className="space-y-3">
                     <div className="flex justify-between items-start gap-2">
-                      <span className="text-[8px] bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded font-extrabold uppercase tracking-wide">
+                      <span className="text-[8px] bg-slate-50/80 text-slate-500 border border-slate-200/40 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">
                         {doc.category?.name || "Tài liệu"}
                       </span>
-                      <span className="text-[8px] text-emerald-600 font-extrabold flex items-center gap-1 bg-emerald-50 border border-emerald-100/65 px-1.5 py-0.5 rounded">
+                      <span className="text-[8px] text-emerald-700 font-bold flex items-center gap-1 bg-emerald-50/80 border border-emerald-100/60 px-1.5 py-0.5 rounded-md">
                         <CheckCircle2 className="h-3 w-3" /> ĐÃ DUYỆT
                       </span>
                     </div>
 
                     <Link href={`/document/${doc.slug}`}>
-                      <h3 className="text-xs font-bold text-slate-850 group-hover:text-slate-950 cursor-pointer transition line-clamp-1 leading-snug">
+                      <h3 className="text-[13px] font-bold text-slate-905 group-hover:text-black cursor-pointer transition line-clamp-1 leading-snug tracking-tight">
                         {doc.title}
                       </h3>
                     </Link>
 
-                    <p className="text-[11px] text-slate-550 line-clamp-2 leading-relaxed font-medium">
+                    <p className="text-xs text-slate-555 line-clamp-2 leading-relaxed font-semibold">
                       {doc.description || "Tài liệu ôn thi chia sẻ cộng đồng không kèm mô tả."}
                     </p>
                   </div>
@@ -353,36 +353,36 @@ export default function DocumentsCatalogClient({
                     {/* Tags row */}
                     <div className="flex flex-wrap gap-1 text-[9px] text-slate-500 font-bold">
                       {doc.grade?.name && (
-                        <span className="bg-slate-50 text-slate-600 px-2 py-0.5 rounded border border-slate-200/50">
+                        <span className="bg-slate-50/80 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/40">
                           {doc.grade.name}
                         </span>
                       )}
                       {doc.subject?.name && (
-                        <span className="bg-slate-50 text-slate-600 px-2 py-0.5 rounded border border-slate-200/50">
+                        <span className="bg-slate-50/80 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/40">
                           {doc.subject.name}
                         </span>
                       )}
                       {doc.files && (
-                        <span className="bg-slate-900 text-white px-2 py-0.5 rounded">
+                        <span className="bg-slate-905 text-white px-2 py-0.5 rounded-md shadow-3xs font-semibold">
                           {doc.files.length} tệp
                         </span>
                       )}
                     </div>
 
                     {/* Stats */}
-                    <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold">
+                    <div className="flex justify-between items-center text-[10px] text-slate-455 font-bold">
                       <div className="flex items-center gap-1.5">
-                        <div className="h-5 w-5 rounded-full bg-slate-100 text-slate-650 border border-slate-200 flex items-center justify-center font-bold">
+                        <div className="h-5 w-5 rounded-full bg-slate-50 text-slate-650 border border-slate-150 flex items-center justify-center font-bold text-[9px]">
                           {doc.uploader?.full_name?.charAt(0).toUpperCase() || "U"}
                         </div>
-                        <span className="text-slate-550 truncate max-w-[80px]">{doc.uploader?.full_name || "Thành viên"}</span>
+                        <span className="text-slate-650 truncate max-w-[80px] font-semibold">{doc.uploader?.full_name || "Thành viên"}</span>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className="flex items-center gap-0.5">
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <span className="flex items-center gap-0.5 font-semibold">
                           <Eye className="h-3 w-3" /> {doc.view_count || 0}
                         </span>
-                        <span className="flex items-center gap-0.5">
+                        <span className="flex items-center gap-0.5 font-semibold">
                           <Download className="h-3 w-3" /> {doc.download_count || 0}
                         </span>
                       </div>
@@ -396,9 +396,9 @@ export default function DocumentsCatalogClient({
 
       </main>
 
-      {/* Footer */}
-      <footer className="w-full bg-slate-50/50 border-t border-slate-200/50 py-8 text-center text-[10px] text-slate-400">
-        <p>&copy; {new Date().getFullYear()} TCK Tài Liệu. Nền tảng chia sẻ tài liệu mở hàng đầu Việt Nam.</p>
+      {/* 6. STATIC SECURE FOOTER */}
+      <footer className="w-full bg-slate-50/50 border-t border-slate-200/50 py-8 text-center text-xs text-slate-455">
+        <p>&copy; {new Date().getFullYear()} TCK <span className="font-light text-slate-500 lowercase">tài liệu</span>. Nền tảng chia sẻ tài liệu mở hàng đầu Việt Nam.</p>
       </footer>
 
       {/* Render Upload Modal */}
