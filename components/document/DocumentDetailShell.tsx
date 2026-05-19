@@ -59,7 +59,11 @@ export default function DocumentDetailShell({
       if (isLoggedIn) {
         downloadDocumentFile(activeFile.id)
           .then((res) => {
-            setActiveFileUrl(res.downloadUrl);
+            if (res.success && res.downloadUrl) {
+              setActiveFileUrl(res.downloadUrl);
+            } else {
+              setActiveFileUrl(null);
+            }
           })
           .catch(() => {
             setActiveFileUrl(null);
@@ -110,9 +114,13 @@ export default function DocumentDetailShell({
     }
     try {
       const res = await downloadDocumentFile(activeFile.id);
-      // Trigger browser download by opening in new window or hidden element
-      window.open(res.downloadUrl, "_blank");
-      toast.success("Đang bắt đầu tải tài liệu xuống máy...");
+      if (res.success && res.downloadUrl) {
+        // Trigger browser download by opening in new window or hidden element
+        window.open(res.downloadUrl, "_blank");
+        toast.success("Đang bắt đầu tải tài liệu xuống máy...");
+      } else {
+        toast.error(res.error || "Đã xảy ra lỗi khi tải.");
+      }
     } catch (err: any) {
       toast.error(err.message || "Đã xảy ra lỗi khi tải.");
     }

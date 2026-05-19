@@ -274,59 +274,73 @@ export async function incrementDocumentViews(bundleId: string) {
 }
 
 // Authorize download and generate signed url for R2 object
+// Authorize download and generate signed url for R2 object
 export async function downloadDocumentFile(fileId: string) {
-  const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-  if (authError || !user) {
-    throw new Error("Unauthorized. Please log in to download this document.");
-  }
+    if (authError || !user) {
+      return { success: false, error: "Phiên đăng nhập hết hạn hoặc chưa đăng nhập." };
+    }
 
-  // Get file details to verify existence & fetch R2 key
-  const { data: file, error: fileError } = await supabase
-    .from("document_files")
-    .select("*, bundle:document_bundles(id, status, download_count)")
-    .eq("id", fileId)
-    .single();
+    // Get file details to verify existence & fetch R2 key
+    const { data: file, error: fileError } = await supabase
+      .from("document_files")
+      .select("*, bundle:document_bundles(id, status, download_count, uploader_id)")
+      .eq("id", fileId)
+      .single();
 
-  if (fileError || !file) {
-    throw new Error("File not found.");
-  }
+    if (fileError || !file) {
+      return { success: false, error: "Không tìm thấy file tài liệu." };
+    }
 
-  // Ensure bundle is approved before public access, or user is owner/admin
-  if (file.bundle.status !== "approved" && file.bundle.uploader_id !== user.id) {
-    throw new Error("This document is pending approval and cannot be downloaded.");
-  }
+    // Ensure bundle is approved before public access, or user is owner/admin
+    const bundleUploaderId = file.bundle?.uploader_id || "";
+    const bundleStatus = file.bundle?.status || "";
+    if (bundleStatus !== "approved" && bundleUploaderId !== user.id) {
+      return { success: false, error: "Tài liệu này đang chờ phê duyệt và không thể tải xuống." };
+    }
 
-  // Generate expiring Presigned URL for secure download
-  const downloadUrl = await generatePresignedDownloadUrl(file.r2_key, 600); // 10 minutes expiration
+    // Generate expiring Presigned URL for secure download
+    let downloadUrl = "";
+    try {
+      downloadUrl = await generatePresignedDownloadUrl(file.r2_key, 600); // 10 minutes expiration
+    } catch (storageErr: any) {
+      console.error("Storage download URL generation failed:", storageErr);
+      return { success: false, error: "Không thể tạo liên kết tải xuống bảo mật từ dịch vụ lưu trữ." };
+    }
 
-  // Log download event
-  await supabase.from("download_logs").insert({
-    user_id: user.id,
-    bundle_id: file.bundle.id,
-    file_id: file.id,
-  });
+    // Log download event
+    await supabase.from("download_logs").insert({
+      user_id: user.id,
+      bundle_id: file.bundle.id,
+      file_id: file.id,
+    });
 
-  // Increment download counts in DB
-  await supabase
-    .from("document_bundles")
-    .update({ download_count: (file.bundle.download_count || 0) + 1 })
-    .eq("id", file.bundle.id);
-
-  // Update profile download stats
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("total_downloads")
-    .eq("id", user.id)
-    .single();
-
-  if (profile) {
+    // Increment download counts in DB
     await supabase
-      .from("profiles")
-      .update({ total_downloads: (profile.total_downloads || 0) + 1 })
-      .eq("id", user.id);
-  }
+      .from("document_bundles")
+      .update({ download_count: (file.bundle.download_count || 0) + 1 })
+      .eq("id", file.bundle.id);
 
-  return { downloadUrl };
+    // Update profile download stats
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("total_downloads")
+      .eq("id", user.id)
+      .single();
+
+    if (profile) {
+      await supabase
+        .from("profiles")
+        .update({ total_downloads: (profile.total_downloads || 0) + 1 })
+        .eq("id", user.id);
+    }
+
+    return { success: true, downloadUrl };
+  } catch (err: any) {
+    console.error("downloadDocumentFile action failed:", err);
+    return { success: false, error: err.message || "Lỗi hệ thống khi tải tài liệu." };
+  }
 }
