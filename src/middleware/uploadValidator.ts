@@ -6,7 +6,7 @@
  */
 
 import type { NextRequest } from 'next/server';
-import type { Database } from '@/types/supabase';
+import type { Database } from '../types/supabase';
 import { getUserInfo } from './auth';
 
 export interface ValidationResult {

@@ -7,13 +7,12 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { Upload } from '@supabase/storage-js';
-import type { Database } from '@/types/supabase'; // adjust path if you have a generated types file
+import type { Database } from '../types/supabase'; // adjust path if you have a generated types file
 
 // Initialise a server‑side client (service role) – never expose this to the browser.
 const supabaseAdmin: SupabaseClient<Database> = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-role'
 );
 
 /**

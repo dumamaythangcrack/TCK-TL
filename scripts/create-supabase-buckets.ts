@@ -12,8 +12,9 @@ import * as dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   console.error('Missing Supabase URL or SERVICE_ROLE_KEY in environment.');
   process.exit(1);
@@ -55,7 +56,7 @@ async function createBucket(bucket: BucketConfig) {
   if (res.ok) {
     console.log(`✅ Bucket "${bucket.name}" created (public=${bucket.public})`);
   } else if (res.status === 400) {
-    const data = await res.json();
+    const data = (await res.json()) as { message?: string };
     if (data?.message?.includes('already exists')) {
       console.log(`⚠️ Bucket "${bucket.name}" already exists.`);
     } else {

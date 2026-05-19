@@ -8,12 +8,12 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@/types/supabase';
+import type { Database } from '../types/supabase';
 
 // Initialise a client that can read the auth cookie / bearer token.
 const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
 );
 
 /**
