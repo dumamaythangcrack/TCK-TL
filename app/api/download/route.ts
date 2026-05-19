@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
 
   // If the bucket is public we can just redirect to the public URL.
   if (bucket === 'public-documents' || bucket === 'avatars' || bucket === 'thumbnails' || bucket === 'cdn-cache') {
-    const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(path)}`;
+    const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+    const supabaseUrl = rawUrl.startsWith('http://') || rawUrl.startsWith('https://') ? rawUrl : `https://${rawUrl}`;
+    const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${encodeURIComponent(path)}`;
     return NextResponse.redirect(publicUrl);
   }
 
