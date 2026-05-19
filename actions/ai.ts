@@ -125,14 +125,15 @@ export async function sendAiChatMessage(data: ChatMessageRequest) {
   const isGuest = data.chatId === "guest-session";
   let user: any = null;
 
-  if (!isGuest) {
-    const supabase = await createClient();
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) {
-      return { success: false, error: "Unauthorized. Vui lòng đăng nhập." };
+  try {
+    if (!isGuest) {
+      const supabase = await createClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
+        return { success: false, error: "Unauthorized. Vui lòng đăng nhập." };
+      }
+      user = authUser;
     }
-    user = authUser;
-  }
 
   let history: any[] = [];
   if (!isGuest) {
@@ -220,24 +221,24 @@ Quy tắc giảng dạy:
 
   let response;
   try {
-    try {
-      response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: contents,
-        config: {
-          systemInstruction,
-        },
-      });
-    } catch (firstError: any) {
-      console.warn("Primary model (gemini-2.5-flash) failed, trying fallback model gemini-1.5-flash...", firstError);
-      response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: contents,
-        config: {
-          systemInstruction,
-        },
-      });
-    }
+    response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: contents,
+      config: {
+        systemInstruction,
+      },
+    });
+  } catch (error: any) {
+    console.error("Gemini API Error in chat:", error);
+    const isOverloaded = error?.message?.includes("503") || error?.message?.includes("demand") || error?.status === "UNAVAILABLE";
+    const userFriendlyError = isOverloaded
+      ? "Mô hình AI hiện đang quá tải do nhu cầu sử dụng cao. Vui lòng thử lại sau ít phút!"
+      : "Không thể kết nối với dịch vụ Gemini AI lúc này. Vui lòng thử lại.";
+    return {
+      success: false,
+      error: userFriendlyError,
+    };
+  }
 
     const aiResponseText = response.text || "AI không thể đưa ra câu trả lời vào lúc này.";
 

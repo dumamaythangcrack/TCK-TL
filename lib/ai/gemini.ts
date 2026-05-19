@@ -38,26 +38,25 @@ Quy tắc:
 
     try {
       response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash', // Try Gemini 2.5 Flash first
+        model: 'gemini-2.5-flash',
         contents: contents,
         config: {
           systemInstruction,
         }
       });
-    } catch (firstError: any) {
-      console.warn("Primary model (gemini-2.5-flash) failed, attempting fallback to gemini-1.5-flash...", firstError);
-      response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', // Fallback to Gemini 1.5 Flash
-        contents: contents,
-        config: {
-          systemInstruction,
-        }
-      });
-    }
 
-    return response.text;
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw new Error("Dịch vụ AI hiện tại đang quá tải hoặc gặp lỗi. Vui lòng thử lại sau.");
+      return response.text;
+    } catch (error: any) {
+      console.error("Gemini API Error:", error);
+      const isOverloaded = error?.message?.includes("503") || error?.message?.includes("demand") || error?.status === "UNAVAILABLE";
+      if (isOverloaded) {
+        throw new Error("Mô hình AI hiện đang quá tải do nhu cầu sử dụng cao. Vui lòng thử lại sau ít phút!");
+      }
+      throw new Error("Không thể kết nối với dịch vụ Gemini AI lúc này. Vui lòng thử lại.");
+    }
+  } catch (error: any) {
+    console.error("solveProblemWithGemini Error:", error);
+    throw error;
   }
 }
+
