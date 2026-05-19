@@ -214,45 +214,45 @@ export default function DocumentDetailShell({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 relative">
+    <div className="min-h-screen bg-slate-50/40 text-slate-850 p-4 md:p-8 relative">
       {/* Subtle Background Glows */}
-      <div className="absolute top-10 left-10 h-96 w-96 rounded-full bg-blue-100/10 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-10 h-96 w-96 rounded-full bg-indigo-100/10 blur-3xl pointer-events-none" />
+      <div className="absolute top-10 left-10 h-96 w-96 rounded-full bg-blue-100/5 blur-3xl pointer-events-none" />
+      <div className="absolute bottom-10 right-10 h-96 w-96 rounded-full bg-indigo-100/5 blur-3xl pointer-events-none" />
 
-      <div className="max-w-6xl mx-auto space-y-8 relative z-10">
+      <div className="max-w-5xl mx-auto space-y-6 relative z-10">
         {/* Document Title & Meta Hero Panel */}
-        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 md:p-8 space-y-4 shadow-xs">
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-0.5 rounded-full font-bold uppercase">
+        <div className="bg-white border border-slate-200/60 rounded-2xl p-6 md:p-8 space-y-4 shadow-3xs">
+          <div className="flex flex-wrap gap-2 text-[10px] font-bold">
+            <span className="bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-0.5 rounded-lg uppercase tracking-wider">
               {bundle.category?.name || "Tài liệu học tập"}
             </span>
-            <span className="bg-slate-50 text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-100 font-semibold">
+            <span className="bg-slate-50 text-slate-650 px-2.5 py-0.5 rounded-lg border border-slate-150">
               {bundle.grade?.name || "Lớp học"}
             </span>
-            <span className="bg-slate-50 text-slate-600 px-2.5 py-0.5 rounded-full border border-slate-100 font-semibold">
+            <span className="bg-slate-50 text-slate-650 px-2.5 py-0.5 rounded-lg border border-slate-150">
               Môn {bundle.subject?.name || "Môn học"}
             </span>
           </div>
 
-          <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight text-slate-900 leading-tight">
+          <h1 className="text-xl md:text-3xl font-extrabold tracking-tight text-slate-900 leading-tight">
             {bundle.title}
           </h1>
 
-          <p className="text-sm md:text-base text-slate-500 leading-relaxed max-w-4xl">
+          <p className="text-xs md:text-sm text-slate-500 leading-relaxed max-w-4xl font-medium">
             {bundle.description || "Không có mô tả chi tiết."}
           </p>
 
           {/* Interaction Bar & Uploader info */}
-          <div className="flex flex-wrap justify-between items-center border-t border-slate-100 pt-6 gap-4">
+          <div className="flex flex-wrap justify-between items-center border-t border-slate-100 pt-5 gap-4">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 text-lg font-black shrink-0">
+              <div className="h-9 w-9 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700 text-xs font-bold shrink-0">
                 {bundle.uploader?.full_name?.charAt(0).toUpperCase() || "U"}
               </div>
               <div>
-                <p className="font-bold text-slate-900 text-sm">
+                <p className="font-bold text-slate-850 text-xs">
                   Đăng bởi: {bundle.uploader?.full_name || "Thành viên TCK"}
                 </p>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-slate-400 font-semibold">
                   {new Date(bundle.created_at).toLocaleDateString()} • {bundle.uploader?.role}
                 </p>
               </div>
@@ -263,15 +263,15 @@ export default function DocumentDetailShell({
                   onClick={handleFollow}
                   variant="ghost"
                   size="sm"
-                  className="text-xs text-blue-600 hover:text-blue-700 h-8 px-2 flex items-center gap-1 hover:bg-blue-50 rounded-lg shrink-0 ml-2"
+                  className="text-[10px] text-slate-600 hover:text-slate-900 h-8 px-2.5 flex items-center gap-1 hover:bg-slate-100 rounded-xl shrink-0 ml-2 font-bold border border-slate-200/60"
                 >
                   {followed ? (
                     <>
-                      <UserCheck className="h-3.5 w-3.5" /> Đã theo dõi
+                      <UserCheck className="h-3.5 w-3.5 text-slate-500" /> Đã theo dõi
                     </>
                   ) : (
                     <>
-                      <UserPlus className="h-3.5 w-3.5" /> Theo dõi
+                      <UserPlus className="h-3.5 w-3.5 text-slate-550" /> Theo dõi
                     </>
                   )}
                 </Button>
@@ -283,22 +283,22 @@ export default function DocumentDetailShell({
               <Button
                 onClick={handleLike}
                 variant="outline"
-                className={`border-slate-200 hover:bg-slate-50 bg-white flex items-center gap-1.5 h-9 rounded-xl text-xs font-semibold ${
-                  liked ? "text-red-650 border-red-200 bg-red-50 hover:bg-red-100" : "text-slate-700"
+                className={`border-slate-200 hover:bg-slate-50 bg-white flex items-center gap-1.5 h-9 rounded-xl text-xs font-bold transition-all ${
+                  liked ? "text-slate-900 border-slate-400 bg-slate-50" : "text-slate-600"
                 }`}
               >
-                <Heart className={`h-4.5 w-4.5 ${liked ? "fill-red-500" : ""}`} />
+                <Heart className={`h-4 w-4 ${liked ? "fill-slate-900 text-slate-900" : ""}`} />
                 Thích ({likeCount})
               </Button>
 
               <Button
                 onClick={handleBookmark}
                 variant="outline"
-                className={`border-slate-200 hover:bg-slate-50 bg-white flex items-center gap-1.5 h-9 rounded-xl text-xs font-semibold ${
-                  bookmarked ? "text-yellow-650 border-yellow-200 bg-yellow-50 hover:bg-yellow-100" : "text-slate-700"
+                className={`border-slate-200 hover:bg-slate-50 bg-white flex items-center gap-1.5 h-9 rounded-xl text-xs font-bold transition-all ${
+                  bookmarked ? "text-slate-900 border-slate-400 bg-slate-50" : "text-slate-600"
                 }`}
               >
-                <Bookmark className={`h-4.5 w-4.5 ${bookmarked ? "fill-yellow-500" : ""}`} />
+                <Bookmark className={`h-4 w-4 ${bookmarked ? "fill-slate-900 text-slate-900" : ""}`} />
                 Lưu học tập
               </Button>
 
@@ -306,20 +306,20 @@ export default function DocumentDetailShell({
                 onClick={handleReport}
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 text-slate-400 hover:text-red-500 hover:bg-slate-100 rounded-xl"
+                className="h-9 w-9 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-xl border border-slate-200/60"
               >
-                <AlertTriangle className="h-4.5 w-4.5" />
+                <AlertTriangle className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </div>
 
         {/* Dynamic Split Preview Panel */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Left panel: File selection sidebar */}
           <div className="lg:col-span-1 space-y-4">
-            <div className="bg-white border border-slate-200/80 rounded-3xl p-5 space-y-4 shadow-xs">
-              <h2 className="font-bold text-sm text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
+            <div className="bg-white border border-slate-200/60 rounded-2xl p-5 space-y-4 shadow-3xs">
+              <h2 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-3">
                 <FileText className="h-4 w-4 text-blue-600" /> Danh sách File gộp ({bundle.files.length})
               </h2>
 
@@ -330,18 +330,18 @@ export default function DocumentDetailShell({
                     onClick={() => setActiveFile(file)}
                     className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between group ${
                       activeFile.id === file.id
-                        ? "border-blue-600 bg-blue-50/20 text-blue-700"
-                        : "border-slate-100 bg-slate-50/50 hover:bg-slate-50 text-slate-600"
+                        ? "border-slate-900 bg-slate-50/50 text-slate-900"
+                        : "border-slate-100 bg-slate-50/20 hover:bg-slate-50 text-slate-650"
                     }`}
                   >
-                    <div className="truncate pr-2">
-                      <p className={`font-bold truncate ${activeFile.id === file.id ? "text-blue-700" : "text-slate-850"}`}>{file.file_name}</p>
-                      <p className="text-[10px] text-slate-400">
+                    <div className="truncate pr-2 font-semibold">
+                      <p className={`truncate ${activeFile.id === file.id ? "text-slate-900 font-extrabold" : "text-slate-700"}`}>{file.file_name}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">
                         {(file.file_size_bytes / 1024 / 1024).toFixed(2)} MB • {file.file_extension.toUpperCase()}
                       </p>
                     </div>
                     {file.is_primary && (
-                      <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
+                      <span className="text-[8px] bg-slate-100 text-slate-800 border border-slate-200 px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
                         Chính
                       </span>
                     )}
@@ -362,24 +362,24 @@ export default function DocumentDetailShell({
                 onDownloadRequest={handleDownload}
               />
             ) : (
-              <div className="w-full aspect-[4/5] bg-slate-100/50 rounded-3xl border border-slate-200 flex items-center justify-center">
-                <span className="text-slate-400 text-sm animate-pulse">Đang tải tài liệu xem trước...</span>
+              <div className="w-full aspect-[4/5] bg-slate-50 rounded-2xl border border-slate-200/60 flex items-center justify-center shadow-3xs">
+                <span className="text-slate-450 text-xs font-semibold animate-pulse">Đang tải tài liệu xem trước...</span>
               </div>
             )}
           </div>
         </div>
 
         {/* 3. COMMENTS & DISCUSSION SECTION */}
-        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 md:p-8 space-y-6 shadow-xs">
-          <h2 className="text-lg md:text-xl font-bold flex items-center gap-2 border-b border-slate-100 pb-4 text-slate-900">
-            <MessageSquare className="h-5.5 w-5.5 text-blue-600" />
+        <div className="bg-white border border-slate-200/60 rounded-2xl p-6 md:p-8 space-y-6 shadow-3xs">
+          <h2 className="text-sm md:text-base font-extrabold flex items-center gap-2 border-b border-slate-100 pb-4 text-slate-900">
+            <MessageSquare className="h-4.5 w-4.5 text-slate-700" />
             Thảo luận & Bình luận ({comments.length})
           </h2>
 
           {/* Comment input form */}
           {isLoggedIn ? (
             <form onSubmit={handleAddComment} className="flex gap-3 items-start">
-              <div className="h-8 w-8 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 text-xs font-black shrink-0">
+              <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 text-xs font-bold shrink-0">
                 {currentUser.email.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 flex gap-2">
@@ -387,15 +387,15 @@ export default function DocumentDetailShell({
                   value={newCommentText}
                   onChange={(e) => setNewCommentText(e.target.value)}
                   placeholder="Nhập câu hỏi hoặc cảm nhận của bạn về tài liệu..."
-                  className="bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-0 rounded-xl text-xs md:text-sm"
+                  className="bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:border-slate-350 focus:ring-0 rounded-xl text-xs"
                 />
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 rounded-xl shadow-sm">
+                <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 rounded-xl shadow-2xs text-xs">
                   Gửi
                 </Button>
               </div>
             </form>
           ) : (
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
+            <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-200 text-center text-xs text-slate-500 font-semibold">
               Bạn cần đăng nhập để tham gia thảo luận.
             </div>
           )}
@@ -408,29 +408,29 @@ export default function DocumentDetailShell({
                 const replies = comments.filter((c: any) => c.parent_id === comment.id);
 
                 return (
-                  <div key={comment.id} className="space-y-3">
+                  <div key={comment.id} className="space-y-2">
                     {/* Root Comment row */}
-                    <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-150 flex gap-3 justify-between items-start">
+                    <div className="p-4 bg-slate-50/20 rounded-xl border border-slate-200/50 flex gap-3 justify-between items-start">
                       <div className="flex gap-3">
-                        <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 text-xs font-black shrink-0">
+                        <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 text-xs font-bold shrink-0">
                           {comment.user?.full_name?.charAt(0).toUpperCase() || "U"}
                         </div>
                         <div className="space-y-1">
-                          <p className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                          <p className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
                             {comment.user?.full_name || "Thành viên"}
                             {comment.user_id === bundle.uploader_id && (
-                              <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded font-bold uppercase">
+                              <span className="text-[8px] bg-slate-100 text-slate-800 border border-slate-250/65 px-1.5 py-0.5 rounded font-black uppercase">
                                 Tác giả
                               </span>
                             )}
                           </p>
-                          <p className="text-xs text-slate-650 leading-relaxed">{comment.content}</p>
-                          <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1">
+                          <p className="text-xs text-slate-650 leading-relaxed font-semibold">{comment.content}</p>
+                          <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1 font-bold">
                             <span>{new Date(comment.created_at).toLocaleDateString()}</span>
                             {isLoggedIn && !comment.is_deleted && (
                               <button
                                 onClick={() => setReplyingToId(comment.id)}
-                                className="hover:text-blue-600 font-semibold cursor-pointer"
+                                className="hover:text-slate-800 font-extrabold cursor-pointer transition"
                               >
                                 Trả lời
                               </button>
@@ -445,7 +445,7 @@ export default function DocumentDetailShell({
                           onClick={() => handleDeleteComment(comment.id)}
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-slate-400 hover:text-red-500 hover:bg-slate-100 rounded-lg"
+                          className="h-7 w-7 text-slate-400 hover:text-slate-800 hover:bg-slate-100/60 rounded-lg"
                         >
                           <Trash className="h-3.5 w-3.5" />
                         </Button>
@@ -455,23 +455,23 @@ export default function DocumentDetailShell({
                     {/* Replies mapping */}
                     {replies.map((reply: any) => (
                       <div key={reply.id} className="flex gap-3 pl-8">
-                        <CornerDownRight className="h-5 w-5 text-slate-300 shrink-0 mt-2" />
-                        <div className="p-3 bg-slate-50/80 hover:bg-slate-50 rounded-xl border border-slate-150 flex-1 flex justify-between items-start">
+                        <CornerDownRight className="h-4 w-4 text-slate-300 shrink-0 mt-2.5" />
+                        <div className="p-3 bg-slate-50/10 hover:bg-slate-50/20 rounded-xl border border-slate-200/40 flex-1 flex justify-between items-start">
                           <div className="flex gap-2">
-                            <div className="h-6 w-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 text-[10px] font-black shrink-0">
+                            <div className="h-6 w-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 text-[10px] font-bold shrink-0">
                               {reply.user?.full_name?.charAt(0).toUpperCase() || "U"}
                             </div>
                             <div className="space-y-0.5">
-                              <p className="font-bold text-slate-800 text-[10px] flex items-center gap-1.5">
+                              <p className="font-extrabold text-slate-800 text-[10px] flex items-center gap-1.5">
                                 {reply.user?.full_name || "Thành viên"}
                                 {reply.user_id === bundle.uploader_id && (
-                                  <span className="text-[8px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded font-bold uppercase">
+                                  <span className="text-[8px] bg-slate-100 text-slate-800 border border-slate-250/65 px-1.5 py-0.5 rounded font-black uppercase">
                                     Tác giả
                                   </span>
                                 )}
                               </p>
-                              <p className="text-xs text-slate-650 leading-relaxed">{reply.content}</p>
-                              <p className="text-[10px] text-slate-400 mt-1">
+                              <p className="text-xs text-slate-650 leading-relaxed font-semibold">{reply.content}</p>
+                              <p className="text-[10px] text-slate-400 mt-1 font-bold">
                                 {new Date(reply.created_at).toLocaleDateString()}
                               </p>
                             </div>
@@ -482,7 +482,7 @@ export default function DocumentDetailShell({
                               onClick={() => handleDeleteComment(reply.id)}
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 text-slate-400 hover:text-red-500 hover:bg-slate-100 rounded-lg"
+                              className="h-6 w-6 text-slate-400 hover:text-slate-800 hover:bg-slate-100/60 rounded-lg"
                             >
                               <Trash className="h-3.5 w-3.5" />
                             </Button>
@@ -498,12 +498,12 @@ export default function DocumentDetailShell({
                           value={replyText}
                           onChange={(e) => setReplyText(e.target.value)}
                           placeholder="Trả lời bình luận..."
-                          className="bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:border-blue-600 focus:ring-0 rounded-xl text-xs h-9"
+                          className="bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:border-slate-350 focus:ring-0 rounded-xl text-xs h-9"
                         />
                         <Button
                           onClick={() => handleAddReply(comment.id)}
                           size="sm"
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-9 px-3 rounded-xl shrink-0"
+                          className="bg-slate-900 hover:bg-slate-850 text-white font-bold h-9 px-3 rounded-xl shrink-0 text-xs"
                         >
                           Trả lời
                         </Button>
@@ -511,7 +511,7 @@ export default function DocumentDetailShell({
                           onClick={() => setReplyingToId(null)}
                           variant="ghost"
                           size="sm"
-                          className="text-xs h-9"
+                          className="text-xs h-9 font-bold"
                         >
                           Hủy
                         </Button>

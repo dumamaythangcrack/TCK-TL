@@ -47,23 +47,23 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex items-center justify-center p-4 relative font-sans">
+    <div className="min-h-screen bg-slate-50/40 text-slate-855 flex items-center justify-center p-4 relative font-sans">
       
       {/* Floating navigation back home */}
-      <Link href="/" className="absolute top-6 left-6 inline-flex items-center gap-1 text-xs text-slate-450 hover:text-slate-850 font-bold transition">
+      <Link href="/" className="absolute top-6 left-6 inline-flex items-center gap-1 text-xs text-slate-450 hover:text-slate-905 font-bold transition">
         <ArrowLeft className="h-4 w-4" /> Về trang chủ
       </Link>
 
-      <Card className="max-w-md w-full border border-slate-200 rounded-3xl p-4 shadow-sm bg-white relative z-10">
+      <Card className="max-w-md w-full border border-slate-200/60 rounded-2xl p-4 shadow-3xs bg-white relative z-10">
         <CardHeader className="text-center space-y-2">
           <Link href="/" className="inline-flex items-center gap-1.5 justify-center mx-auto mb-2 cursor-pointer group">
-            <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center font-black text-xs text-white shadow-2xs group-hover:bg-blue-700 transition-colors">
+            <div className="h-7 w-7 rounded-lg bg-slate-905 flex items-center justify-center font-black text-xs text-white shadow-2xs group-hover:bg-slate-800 transition-colors">
               TCK
             </div>
-            <span className="font-extrabold text-sm tracking-tight text-slate-900 uppercase">Tài Liệu</span>
+            <span className="font-extrabold text-sm tracking-tight text-slate-905 uppercase">Tài Liệu</span>
           </Link>
-          <CardTitle className="text-xl font-black text-slate-900 tracking-tight">Chào mừng trở lại</CardTitle>
-          <CardDescription className="text-slate-400 text-xs font-semibold">
+          <CardTitle className="text-lg font-extrabold text-slate-905 tracking-tight">Chào mừng trở lại</CardTitle>
+          <CardDescription className="text-slate-400 text-xs font-semibold leading-relaxed">
             Đăng nhập để xem toàn bộ tài liệu học tập & tải xuống hoàn toàn miễn phí
           </CardDescription>
         </CardHeader>
@@ -71,7 +71,7 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs font-bold text-slate-600">Địa chỉ Email</Label>
+              <Label htmlFor="email" className="text-xs font-bold text-slate-500 uppercase tracking-wide">Địa chỉ Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -79,12 +79,12 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="bg-slate-50 border-slate-200 text-slate-850 placeholder-slate-400 focus:border-slate-350 focus:ring-0 rounded-xl text-sm"
+                className="bg-slate-50 border-slate-200 text-slate-855 placeholder-slate-400 focus:border-slate-350 focus:ring-0 rounded-xl text-xs"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-xs font-bold text-slate-600">Mật khẩu</Label>
+              <Label htmlFor="password" className="text-xs font-bold text-slate-500 uppercase tracking-wide">Mật khẩu</Label>
               <Input
                 id="password"
                 type="password"
@@ -92,28 +92,28 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="bg-slate-50 border-slate-200 text-slate-850 placeholder-slate-400 focus:border-slate-350 focus:ring-0 rounded-xl text-sm"
+                className="bg-slate-50 border-slate-200 text-slate-855 placeholder-slate-400 focus:border-slate-350 focus:ring-0 rounded-xl text-xs"
               />
             </div>
 
             <Button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-5 rounded-xl shadow-2xs flex items-center justify-center gap-1.5 transition"
+              className="w-full bg-slate-905 hover:bg-slate-800 text-white font-bold text-xs py-5 rounded-xl shadow-2xs flex items-center justify-center gap-1.5 transition-all"
             >
               {isLoading ? "Đang xử lý..." : (
                 <>
-                  <LogIn className="h-4 w-4" />
+                  <LogIn className="h-3.5 w-3.5" />
                   Đăng nhập hệ thống
                 </>
               )}
             </Button>
           </form>
 
-          <div className="text-center text-xs text-slate-400 mt-6 space-y-2 font-semibold">
+          <div className="text-center text-xs text-slate-450 mt-6 space-y-2 font-semibold">
             <p>
               Chưa có tài khoản?{" "}
-              <Link href="/register" className="text-blue-600 hover:underline">
+              <Link href="/register" className="text-slate-855 hover:underline">
                 Đăng ký ngay
               </Link>
             </p>
