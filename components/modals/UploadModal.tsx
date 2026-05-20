@@ -346,7 +346,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="max-w-3xl border border-slate-200 text-slate-800 rounded-3xl overflow-hidden p-0 shadow-lg bg-white">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col border border-slate-200 text-slate-800 rounded-3xl overflow-hidden p-0 shadow-lg bg-white">
         
         <DialogHeader className="p-6 border-b border-slate-100 bg-slate-50/50">
           <DialogTitle className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
@@ -361,7 +361,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
         </DialogHeader>
 
         {step === 1 ? (
-          <div className="p-6 space-y-6">
+          <div className="p-6 space-y-6 overflow-y-auto flex-1">
             {/* Dropzone */}
             <div
               onDragOver={handleDragOver}
@@ -559,7 +559,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
           </div>
         ) : (
           /* Step 2: Metadata Details Form */
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               
               <div className="space-y-4">
