@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 // Get user profile details and detailed stats for dashboard
 export async function getDashboardData() {
@@ -76,4 +77,10 @@ export async function updateProfile(data: UpdateProfileRequest) {
 
   revalidatePath("/dashboard");
   return { success: true };
+}
+
+export async function logoutAction() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect("/");
 }

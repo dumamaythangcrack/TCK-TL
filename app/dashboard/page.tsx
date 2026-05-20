@@ -1,6 +1,6 @@
 "use server";
 
-import { getDashboardData } from "@/actions/profile";
+import { getDashboardData, logoutAction } from "@/actions/profile";
 import { getAiHistory } from "@/actions/ai";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,20 +51,25 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-2.5">
             <Link href="/ai">
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold flex items-center gap-1.5 rounded-xl shadow-xs">
-                <Sparkles className="h-4 w-4" />
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 flex items-center gap-1.5 rounded-xl shadow-xs cursor-pointer">
+                <Sparkles className="h-3.5 w-3.5" />
                 Học tập AI
               </Button>
             </Link>
             {profile?.role === "admin" && (
               <Link href="/adminpanel">
-                <Button variant="outline" className="border-red-200 text-red-650 hover:bg-red-50 rounded-xl">
+                <Button variant="outline" className="border-red-200 text-red-650 hover:bg-red-50 text-xs h-9 px-4 rounded-xl cursor-pointer">
                   Quản trị viên
                 </Button>
               </Link>
             )}
+            <form action={logoutAction}>
+              <Button type="submit" variant="outline" className="border-slate-200/80 hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-slate-650 font-bold text-xs h-9 px-4 rounded-xl shadow-3xs cursor-pointer transition">
+                Đăng xuất
+              </Button>
+            </form>
           </div>
         </div>
 
