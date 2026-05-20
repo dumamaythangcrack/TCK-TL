@@ -1,12 +1,16 @@
-import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
+import { Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700", "800", "900"],
+});
+
+const geist = Geist({
+  variable: "--font-geist",
+  subsets: ["latin"],
 });
 
 const getSiteUrl = (): string => {
@@ -17,6 +21,8 @@ const getSiteUrl = (): string => {
   }
   return url;
 };
+
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "TCK Tài Liệu | Chia sẻ Đề thi & Giáo án Miễn Phí",
@@ -38,7 +44,7 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
-      className={`${outfit.variable} h-full antialiased font-sans`}
+      className={`${inter.variable} ${geist.variable} h-full antialiased font-sans`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}

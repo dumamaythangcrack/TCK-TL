@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   createAiChat,
@@ -14,6 +13,7 @@ import {
 } from "@/actions/ai";
 import { getSubjects } from "@/actions/taxonomy";
 import MarkdownRenderer from "@/components/viewers/MarkdownRenderer";
+import AuthModal from "@/components/modals/AuthModal";
 import {
   Brain,
   Plus,
@@ -24,17 +24,13 @@ import {
   Paperclip,
   Image as ImageIcon,
   FileText,
-  FileSpreadsheet,
-  FileArchive,
-  BookOpen,
   ArrowLeft,
   X,
   History,
   GraduationCap,
-  ListRestart,
-  Bookmark,
   ChevronRight,
-  Info
+  Info,
+  Maximize2
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -61,9 +57,13 @@ export default function AiHubPage() {
   
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authTab, setAuthTab] = useState<"login" | "register">("login");
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
@@ -73,16 +73,16 @@ export default function AiHubPage() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession();
       setIsLoggedIn(!!session);
-
-      // Load subjects
-      const subs = await getSubjects();
-      setSubjects(subs);
-
       if (session) {
+        setCurrentUser(session.user);
         await loadChats();
       } else {
         setIsLoadingChats(false);
       }
+
+      // Load subjects
+      const subs = await getSubjects();
+      setSubjects(subs);
     }
     init();
   }, [supabase]);
@@ -127,7 +127,8 @@ export default function AiHubPage() {
 
   const handleCreateNewChat = async () => {
     if (!isLoggedIn) {
-      toast.error("Vui lòng đăng nhập để lưu trữ lịch sử cuộc trò chuyện AI!");
+      setAuthTab("login");
+      setIsAuthOpen(true);
       return;
     }
     setIsCreatingChat(true);
@@ -181,10 +182,7 @@ export default function AiHubPage() {
                 base64: reader.result as string,
               },
             ]);
-            toast.info(`Đã đính kèm ảnh: ${file.name}`);
           } else {
-            // Document parsing fallback
-            // In a fully responsive prod build, we parse standard string contents or mock PDF paragraphs
             const mockText = `[Đọc tệp ${file.name}]: Đây là nội dung tài liệu giả lập chứa các phần bài học chính về chương trình ôn tập kiểm tra học kỳ ${file.name}.`;
             setAttachedFiles((prev) => [
               ...prev,
@@ -195,7 +193,6 @@ export default function AiHubPage() {
                 textContext: mockText,
               },
             ]);
-            toast.info(`Đã đính kèm tài liệu: ${file.name}`);
           }
         };
 
@@ -247,7 +244,6 @@ export default function AiHubPage() {
           setMessages((prev) => [...prev, geminiRes.message]);
         } else {
           toast.error(geminiRes.error || "Gặp lỗi kết nối AI.");
-          // Remove the user's optimistic message since it failed
           setMessages((prev) => prev.slice(0, -1));
         }
       } catch (err: any) {
@@ -294,7 +290,6 @@ export default function AiHubPage() {
       });
 
       if (res.success) {
-        // Fetch accurate state from backend
         await loadMessages(targetChatId!);
       } else {
         toast.error(res.error || "Không thể gửi.");
@@ -309,13 +304,12 @@ export default function AiHubPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row relative font-sans overflow-hidden">
+    <div className="min-h-screen bg-[#f6f7fb] text-slate-900 flex flex-col md:flex-row relative font-sans overflow-hidden">
       
       {/* 1. SIDEBAR - CHAT THREADS */}
       <AnimatePresence>
         {isHistoryOpen && (
           <>
-            {/* Mobile Sidebar Backdrop */}
             <div
               onClick={() => setIsHistoryOpen(false)}
               className="fixed inset-0 bg-slate-900/10 backdrop-blur-xs z-35 md:hidden"
@@ -324,121 +318,125 @@ export default function AiHubPage() {
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: 280, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              className="fixed md:relative top-0 left-0 h-screen shrink-0 bg-white border-r border-slate-200/80 flex flex-col justify-between z-40 shadow-lg md:shadow-none"
+              className="fixed md:relative top-0 left-0 h-screen shrink-0 bg-white border-r border-black/[0.05] flex flex-col justify-between z-40 shadow-lg md:shadow-none"
             >
-            {/* Sidebar Header */}
-            <div className="p-4 border-b border-slate-150 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <Link href="/" className="flex items-center gap-2 cursor-pointer group">
-                  <div className="h-6 w-6 rounded-lg bg-slate-905 flex items-center justify-center font-black text-[10px] text-white shadow-2xs group-hover:bg-slate-800 transition-colors">
-                    T
-                  </div>
-                  <span className="font-extrabold text-xs tracking-tight text-slate-905 uppercase">
-                    TCK <span className="font-normal text-slate-450 lowercase">ai hub</span>
-                  </span>
-                </Link>
-                
+              {/* Sidebar Header */}
+              <div className="p-4 border-b border-slate-100 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <Link href="/" className="flex items-center gap-2 cursor-pointer group">
+                    <div className="h-6.5 w-6.5 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-[11px] text-white shadow-sm group-hover:bg-blue-700 transition-colors">
+                      T
+                    </div>
+                    <span className="font-extrabold text-xs tracking-tight text-slate-900 uppercase">
+                      TCK <span className="font-normal text-slate-400 lowercase">ai hub</span>
+                    </span>
+                  </Link>
+                  
+                  <Button
+                    onClick={() => setIsHistoryOpen(false)}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-400 hover:text-slate-700 md:hidden"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
                 <Button
-                  onClick={() => setIsHistoryOpen(false)}
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-slate-400 hover:text-slate-700 md:hidden"
+                  onClick={handleCreateNewChat}
+                  disabled={isCreatingChat}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-2xs transition"
                 >
-                  <X className="h-4 w-4" />
+                  <Plus className="h-4 w-4" />
+                  Cuộc hội thoại mới
                 </Button>
               </div>
 
-              <Button
-                onClick={handleCreateNewChat}
-                disabled={isCreatingChat}
-                className="w-full bg-slate-900 hover:bg-slate-850 text-white font-semibold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition"
-              >
-                <Plus className="h-4 w-4" />
-                Cuộc hội thoại mới
-              </Button>
-            </div>
-
-            {/* Chat History List */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              {!isLoggedIn ? (
-                <div className="p-4 text-center space-y-2 mt-8">
-                  <Brain className="h-8 w-8 text-slate-300 mx-auto" />
-                  <p className="text-xs font-bold text-slate-700">Lưu trữ lịch sử học tập</p>
-                  <p className="text-[10px] text-slate-400">
-                    Đăng nhập tài khoản để lưu lại lịch sử các câu hỏi, tài liệu đã phân tích của bạn.
-                  </p>
-                  <Link href="/login" className="block pt-2">
-                    <Button variant="outline" size="sm" className="w-full text-xs border-slate-200 text-blue-600 rounded-lg">
-                      Đăng nhập ngay
-                    </Button>
-                  </Link>
-                </div>
-              ) : isLoadingChats ? (
-                <div className="flex items-center justify-center h-32 text-xs text-slate-400">
-                  Đang tải hội thoại...
-                </div>
-              ) : chats.length === 0 ? (
-                <div className="text-center text-xs text-slate-400 py-12">
-                  Chưa có hội thoại nào.
-                </div>
-              ) : (
-                chats.map((c) => (
-                  <div
-                    key={c.id}
-                    onClick={() => setActiveChatId(c.id)}
-                    className={`group w-full p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-2 text-xs border ${
-                      activeChatId === c.id
-                        ? "bg-slate-50 border-slate-200/50 font-bold text-slate-905 shadow-3xs"
-                        : "bg-transparent border-transparent text-slate-550 hover:bg-slate-50/50 hover:text-slate-905"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <MessageSquare className={`h-4 w-4 shrink-0 ${activeChatId === c.id ? "text-blue-600" : "text-slate-400"}`} />
-                      <span className="truncate">{c.title}</span>
-                    </div>
-                    <Button
-                      onClick={(e) => handleDeleteChat(e, c.id)}
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-md transition"
+              {/* Chat History List */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                {!isLoggedIn ? (
+                  <div className="p-4 text-center space-y-3 mt-8">
+                    <Brain className="h-8 w-8 text-slate-350 mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">Lưu trữ lịch sử học tập</p>
+                    <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                      Đăng nhập tài khoản để đồng bộ lưu lại lịch sử các câu hỏi, tài liệu đã tóm tắt của bạn.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setAuthTab("login");
+                        setIsAuthOpen(true);
+                      }}
+                      className="w-full text-xs font-bold py-1.5 bg-blue-50 border border-blue-100 text-blue-600 rounded-xl hover:bg-blue-100 transition cursor-pointer"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                      Đăng nhập ngay
+                    </button>
                   </div>
-                ))
-              )}
-            </div>
+                ) : isLoadingChats ? (
+                  <div className="flex items-center justify-center h-32 text-xs text-slate-450 font-semibold">
+                    Đang tải hội thoại...
+                  </div>
+                ) : chats.length === 0 ? (
+                  <div className="text-center text-xs text-slate-400 font-semibold py-12">
+                    Chưa có hội thoại học tập nào.
+                  </div>
+                ) : (
+                  chats.map((c) => (
+                    <div
+                      key={c.id}
+                      onClick={() => setActiveChatId(c.id)}
+                      className={`group w-full p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between gap-2 text-xs border ${
+                        activeChatId === c.id
+                          ? "bg-slate-50 border-slate-200 font-bold text-slate-900 shadow-3xs"
+                          : "bg-transparent border-transparent text-slate-500 hover:bg-slate-50/50 hover:text-slate-905"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <MessageSquare className={`h-4 w-4 shrink-0 ${activeChatId === c.id ? "text-blue-600" : "text-slate-400"}`} />
+                        <span className="truncate">{c.title}</span>
+                      </div>
+                      <Button
+                        onClick={(e) => handleDeleteChat(e, c.id)}
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-md transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
 
-            {/* Sidebar Bottom Profile/Help */}
-            <div className="p-3 border-t border-slate-150 bg-slate-50/50 flex flex-col gap-2 text-[10px] text-slate-550">
-              <div className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200/50 shadow-3xs">
-                <Brain className="h-4.5 w-4.5 text-slate-800 shrink-0" />
-                <div className="truncate">
-                  <span className="font-bold text-slate-800 block leading-tight">Gemini 2.5 Flash</span>
-                  <span className="text-slate-400">Model AI học tập chính thức</span>
+              {/* Sidebar Bottom Profile/Help */}
+              <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-2 text-[10px] text-slate-550 select-none">
+                <div className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-black/[0.04] shadow-3xs">
+                  <Brain className="h-4.5 w-4.5 text-blue-600 shrink-0" />
+                  <div className="truncate">
+                    <span className="font-extrabold text-slate-800 block leading-tight">Gemini 2.5 Flash</span>
+                    <span className="text-slate-400 font-medium">Mô hình AI học tập thông minh</span>
+                  </div>
+                </div>
+                <div className="text-center mt-1 font-semibold text-slate-400 uppercase tracking-wider text-[8px]">
+                  TCK TÀI LIỆU &copy; {new Date().getFullYear()}
                 </div>
               </div>
-              <div className="text-center mt-1 font-semibold text-slate-400">
-                TCK TÀI LIỆU &copy; {new Date().getFullYear()}
-              </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* 2. MAIN HUB WORKSPACE */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden relative bg-slate-50">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden relative bg-[#f6f7fb]">
         
         {/* Workspace Sticky Header */}
-        <header className="h-14 border-b border-slate-200/50 bg-white/80 backdrop-blur-md px-4 md:px-6 flex items-center justify-between shrink-0 z-10">
+        <header className="h-14 border-b border-black/[0.05] bg-white/70 backdrop-blur-md px-4 md:px-6 flex items-center justify-between shrink-0 z-10 select-none">
           <div className="flex items-center gap-3">
             {!isHistoryOpen && (
               <Button
                 onClick={() => setIsHistoryOpen(true)}
                 variant="outline"
                 size="sm"
-                className="h-8 border-slate-200 hover:bg-slate-50 text-slate-655 rounded-xl text-xs transition-all shadow-3xs"
+                className="h-8 border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs transition-all shadow-3xs font-semibold"
               >
                 <History className="h-4 w-4 mr-1.5" />
                 Lịch sử
@@ -446,16 +444,16 @@ export default function AiHubPage() {
             )}
 
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-455 font-bold">
-              <GraduationCap className="h-4 w-4 text-slate-805" />
+              <GraduationCap className="h-4 w-4 text-slate-700" />
               <span>Gia sư AI học tập</span>
               <ChevronRight className="h-3 w-3" />
-              <span className="font-extrabold text-slate-850 capitalize">{learningMode === "chat" ? "Trò chuyện giải bài" : learningMode}</span>
+              <span className="font-extrabold text-slate-800 capitalize">{learningMode === "chat" ? "Trò chuyện giải bài" : learningMode}</span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <Link href="/">
-              <Button variant="ghost" size="sm" className="h-8 text-slate-655 hover:text-slate-905 hover:bg-slate-50 rounded-xl text-xs transition-all font-semibold">
+              <Button variant="ghost" size="sm" className="h-8 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl text-xs transition-all font-semibold">
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Về Trang chủ
               </Button>
@@ -466,24 +464,23 @@ export default function AiHubPage() {
         {/* Messaging Board Area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-50/20">
           {messages.length === 0 ? (
-            // Linear-Style onboarding layout
             <div className="max-w-2xl mx-auto py-12 space-y-8">
               <div className="text-center space-y-3">
-                <div className="h-11 w-11 rounded-xl bg-slate-905 flex items-center justify-center mx-auto shadow-2xs">
+                <div className="h-11 w-11 rounded-xl bg-blue-600 flex items-center justify-center mx-auto shadow-sm">
                   <Brain className="h-5 w-5 text-white" />
                 </div>
-                <h1 className="text-lg md:text-xl font-extrabold text-slate-905 tracking-tight">
+                <h1 className="text-lg md:text-xl font-extrabold text-slate-900 tracking-tight">
                   Gia Sư Học Tập TCK AI
                 </h1>
-                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed font-semibold">
-                  Hỏi đáp bài tập, giải đề thi, tóm tắt tài liệu học tập cùng hệ thống trí tuệ nhân tạo Gemini thế mới.
+                <p className="text-xs text-slate-550 max-w-md mx-auto leading-relaxed font-semibold">
+                  Hỏi đáp bài tập, giải đề thi khó, tóm tắt tài liệu học tập cùng hệ thống trí tuệ nhân tạo thế hệ mới.
                 </p>
               </div>
 
               {/* Subject & Mode Selection Panel */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white border border-slate-200/50 p-5 rounded-2xl shadow-3xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white border border-black/[0.05] p-5 rounded-2xl shadow-3xs">
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                  <Label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1">
                     <GraduationCap className="h-3.5 w-3.5 text-slate-500" /> Chọn môn học trọng tâm
                   </Label>
                   <Select value={selectedSubject} onValueChange={(val) => setSelectedSubject(val || "")}>
@@ -501,22 +498,22 @@ export default function AiHubPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                  <Label className="text-[10px] font-bold text-slate-455 uppercase tracking-wider flex items-center gap-1">
                     <Sparkles className="h-3.5 w-3.5 text-slate-500" /> Chế độ học tập của AI
                   </Label>
                   <div className="grid grid-cols-2 gap-1 bg-slate-50/50 p-1 rounded-xl border border-slate-200/60">
                     <button
                       onClick={() => setLearningMode("chat")}
-                      className={`py-1.5 text-center rounded-lg text-xs font-bold transition-all ${
-                        learningMode === "chat" ? "bg-white text-slate-905 shadow-3xs border border-slate-200/40" : "text-slate-500 hover:text-slate-800"
+                      className={`py-1.5 text-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        learningMode === "chat" ? "bg-white text-slate-900 shadow-3xs border border-black/[0.04]" : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
                       Giải bài & Chat
                     </button>
                     <button
                       onClick={() => setLearningMode("summarize")}
-                      className={`py-1.5 text-center rounded-lg text-xs font-bold transition-all ${
-                        learningMode === "summarize" ? "bg-white text-slate-905 shadow-3xs border border-slate-200/40" : "text-slate-500 hover:text-slate-800"
+                      className={`py-1.5 text-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        learningMode === "summarize" ? "bg-white text-slate-900 shadow-3xs border border-black/[0.04]" : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
                       Tóm tắt tài liệu
@@ -525,52 +522,52 @@ export default function AiHubPage() {
                 </div>
               </div>
 
-              {/* Premium Linear style feature cards grid */}
+              {/* Premium Feature Card grids */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-white border border-slate-200/50 p-4 rounded-2xl space-y-2 hover:border-slate-350 hover:shadow-3xs transition-all duration-200">
-                  <div className="h-8 w-8 rounded-lg bg-slate-50/50 border border-slate-200/40 flex items-center justify-center">
-                    <ImageIcon className="h-4 w-4 text-slate-700" />
+                <div className="bg-white border border-black/[0.05] p-4 rounded-2xl space-y-2 hover:border-black/[0.1] hover:shadow-sm transition-all duration-200">
+                  <div className="h-8 w-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+                    <ImageIcon className="h-4 w-4 text-blue-600" />
                   </div>
-                  <h3 className="text-xs font-bold text-slate-905">OCR & Quét Đề thi</h3>
+                  <h3 className="text-xs font-bold text-slate-900">OCR & Quét Đề thi</h3>
                   <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">Chụp ảnh đề thi khó, AI dịch đề và giải chi tiết từng bước nhanh chóng.</p>
                 </div>
 
-                <div className="bg-white border border-slate-200/50 p-4 rounded-2xl space-y-2 hover:border-slate-350 hover:shadow-3xs transition-all duration-200">
-                  <div className="h-8 w-8 rounded-lg bg-slate-50/50 border border-slate-200/40 flex items-center justify-center">
-                    <FileText className="h-4 w-4 text-slate-700" />
+                <div className="bg-white border border-black/[0.05] p-4 rounded-2xl space-y-2 hover:border-black/[0.1] hover:shadow-sm transition-all duration-200">
+                  <div className="h-8 w-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+                    <FileText className="h-4 w-4 text-blue-600" />
                   </div>
-                  <h3 className="text-xs font-bold text-slate-905">Phân Tích File PDF</h3>
+                  <h3 className="text-xs font-bold text-slate-900">Phân Tích File PDF</h3>
                   <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">Đính kèm slide bài giảng để AI giải thích thuật ngữ khó, tóm tắt ý chính.</p>
                 </div>
 
-                <div className="bg-white border border-slate-200/50 p-4 rounded-2xl space-y-2 hover:border-slate-350 hover:shadow-3xs transition-all duration-200">
-                  <div className="h-8 w-8 rounded-lg bg-slate-50/50 border border-slate-200/40 flex items-center justify-center">
-                    <Plus className="h-4 w-4 text-slate-700" />
+                <div className="bg-white border border-black/[0.05] p-4 rounded-2xl space-y-2 hover:border-black/[0.1] hover:shadow-sm transition-all duration-200">
+                  <div className="h-8 w-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+                    <Plus className="h-4 w-4 text-blue-600" />
                   </div>
-                  <h3 className="text-xs font-bold text-slate-905">Trắc Nghiệm Tự Ôn</h3>
+                  <h3 className="text-xs font-bold text-slate-900">Trắc Nghiệm Tự Ôn</h3>
                   <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">Yêu cầu AI tự tạo đề kiểm tra thử nhanh gồm 10 câu trắc nghiệm để tự ôn tập.</p>
                 </div>
               </div>
             </div>
           ) : (
             // Active Conversation bubbles
-            <div className="max-w-2xl mx-auto space-y-6 pb-40 md:pb-32">
+            <div className="max-w-2xl mx-auto space-y-6 pb-40 md:pb-32 font-chat">
               {messages.map((msg, index) => (
                 <div
                   key={index}
                   className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {msg.role !== "user" && (
-                    <div className="h-8 w-8 rounded-xl bg-slate-50 border border-slate-200/40 flex items-center justify-center text-slate-800 shrink-0 shadow-3xs">
-                      <Brain className="h-4 w-4" />
+                    <div className="h-8 w-8 rounded-xl bg-white border border-black/[0.05] flex items-center justify-center text-slate-800 shrink-0 shadow-3xs select-none">
+                      <Brain className="h-4 w-4 text-blue-600" />
                     </div>
                   )}
 
                   <div
                     className={`max-w-[85%] p-4 md:p-5 rounded-2xl border text-xs leading-relaxed font-semibold ${
                       msg.role === "user"
-                        ? "bg-slate-905 border-slate-950 text-white shadow-2xs"
-                        : "bg-white border-slate-200/55 text-slate-800 shadow-3xs"
+                        ? "bg-slate-900 border-slate-950 text-white shadow-2xs"
+                        : "bg-white border-black/[0.05] text-slate-850 shadow-3xs"
                     }`}
                   >
                     {msg.role === "user" ? (
@@ -581,7 +578,7 @@ export default function AiHubPage() {
                   </div>
 
                   {msg.role === "user" && (
-                    <div className="h-8 w-8 rounded-xl bg-slate-905 border border-slate-950 flex items-center justify-center text-white shrink-0 shadow-2xs font-extrabold text-[10px]">
+                    <div className="h-8 w-8 rounded-xl bg-slate-900 border border-slate-950 flex items-center justify-center text-white shrink-0 shadow-2xs font-extrabold text-[10px] select-none">
                       U
                     </div>
                   )}
@@ -589,12 +586,12 @@ export default function AiHubPage() {
               ))}
               
               {isSending && (
-                <div className="flex gap-4 justify-start animate-fade-in">
-                  <div className="h-8 w-8 rounded-xl bg-slate-50 border border-slate-200/40 flex items-center justify-center text-slate-700 shrink-0">
-                    <Sparkles className="h-4 w-4 animate-spin text-slate-500" />
+                <div className="flex gap-4 justify-start animate-fade-in font-chat">
+                  <div className="h-8 w-8 rounded-xl bg-white border border-black/[0.05] flex items-center justify-center text-slate-700 shrink-0">
+                    <Sparkles className="h-4 w-4 animate-spin text-blue-500" />
                   </div>
-                  <div className="bg-white border border-slate-200/55 p-3 px-4 rounded-2xl text-xs text-slate-550 flex items-center gap-2 shadow-3xs">
-                    <span className="font-bold text-slate-650 animate-pulse">Gia sư AI đang phân tích và soạn câu trả lời...</span>
+                  <div className="bg-white border border-black/[0.05] p-3 px-4 rounded-2xl text-xs text-slate-500 flex items-center gap-2 shadow-3xs">
+                    <span className="font-bold animate-pulse text-blue-600">AI đang phân tích đề và chuẩn bị bài giải...</span>
                   </div>
                 </div>
               )}
@@ -605,27 +602,57 @@ export default function AiHubPage() {
         </div>
 
         {/* Input Floating Panel Zone */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-slate-50 via-slate-50/90 to-transparent z-10 pointer-events-none">
+        <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-[#f6f7fb] via-[#f6f7fb]/95 to-transparent z-10 pointer-events-none">
           <div className="max-w-2xl mx-auto space-y-3 pointer-events-auto">
             
-            {/* Attachment Preview row */}
+            {/* Redesigned Multi-file attachment preview grid */}
             {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-2 bg-white/95 backdrop-blur-md border border-slate-200/55 p-2 rounded-xl max-h-32 overflow-y-auto shadow-2xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 bg-white/95 backdrop-blur-md border border-black/[0.05] p-3 rounded-2xl shadow-sm max-h-36 overflow-y-auto">
                 {attachedFiles.map((file, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 px-2.5 py-1 rounded-lg text-[10px] font-bold">
+                  <div key={i} className="group relative border border-slate-100 bg-slate-50/50 rounded-xl overflow-hidden aspect-video flex flex-col justify-between p-2">
+                    
                     {file.base64 ? (
-                      <ImageIcon className="h-3.5 w-3.5 text-slate-600" />
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={file.base64}
+                        alt={file.name}
+                        className="absolute inset-0 w-full h-full object-cover z-0"
+                      />
                     ) : (
-                      <FileText className="h-3.5 w-3.5 text-slate-600" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-slate-50 z-0">
+                        <FileText className="h-5 w-5 text-slate-400" />
+                      </div>
                     )}
-                    <span className="truncate max-w-[120px] text-slate-700">{file.name}</span>
+
+                    {/* Image overlay backdrop for buttons */}
+                    <div className="absolute inset-0 bg-slate-900/10 group-hover:bg-slate-900/35 transition-all duration-200 z-1" />
+
+                    {/* Delete item button */}
                     <button
                       type="button"
                       onClick={() => removeAttachedFile(i)}
-                      className="text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 p-0.5 rounded-full transition"
+                      className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-slate-900/50 hover:bg-slate-900 text-white flex items-center justify-center transition opacity-0 group-hover:opacity-100 z-10 cursor-pointer"
                     >
                       <X className="h-3 w-3" />
                     </button>
+
+                    {/* Zoom preview image button for images */}
+                    {file.base64 && (
+                      <button
+                        type="button"
+                        onClick={() => setZoomImage(file.base64 || null)}
+                        className="absolute bottom-1.5 left-1.5 h-5 w-5 rounded-full bg-slate-900/50 hover:bg-slate-900 text-white flex items-center justify-center transition opacity-0 group-hover:opacity-100 z-10 cursor-pointer"
+                      >
+                        <Maximize2 className="h-2.5 w-2.5" />
+                      </button>
+                    )}
+
+                    {/* Bottom Metadata block */}
+                    <div className="relative z-2 mt-auto w-full">
+                      <span className="block text-[8px] font-bold text-white truncate drop-shadow-sm select-none">
+                        {file.name}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -634,19 +661,17 @@ export default function AiHubPage() {
             {/* Input Form Box */}
             <form
               onSubmit={handleSendMessage}
-              className="bg-white border border-slate-200/60 rounded-2xl p-2 shadow-xs focus-within:border-slate-350 focus-within:ring-2 focus-within:ring-slate-100 transition-all duration-200"
+              className="bg-white border border-black/[0.05] rounded-3xl p-2 shadow-sm focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100 transition-all duration-300"
             >
               <div className="flex items-center gap-1.5 px-2 pb-1.5 border-b border-slate-100/60">
-                
-                {/* Subject & Learning Mode Select in input zone for ease of access */}
                 {messages.length > 0 && (
                   <>
                     <Select value={selectedSubject} onValueChange={(val) => setSelectedSubject(val || "")}>
-                      <SelectTrigger className="border-0 bg-transparent text-slate-455 hover:text-slate-800 rounded-lg h-7 text-[10px] w-auto max-w-[120px] gap-1 px-1.5 font-bold">
+                      <SelectTrigger className="border-0 bg-transparent text-slate-500 hover:text-slate-800 rounded-lg h-7 text-[10px] w-auto max-w-[120px] gap-1 px-1.5 font-bold focus:ring-0">
                         <SelectValue placeholder="Môn học" />
                       </SelectTrigger>
                       <SelectContent className="bg-white border border-slate-200 text-slate-805 text-xs">
-                        <SelectItem value="none">Không chọn môn</SelectItem>
+                        <SelectItem value="none">Không môn học</SelectItem>
                         {subjects.map((sub) => (
                           <SelectItem key={sub.id} value={sub.name}>
                             {sub.name}
@@ -658,14 +683,14 @@ export default function AiHubPage() {
                     <div className="h-3 w-px bg-slate-200 mx-1" />
 
                     <Select value={learningMode} onValueChange={(val: any) => setLearningMode(val)}>
-                      <SelectTrigger className="border-0 bg-transparent text-slate-455 hover:text-slate-800 rounded-lg h-7 text-[10px] w-auto gap-1 px-1.5 font-bold">
+                      <SelectTrigger className="border-0 bg-transparent text-slate-500 hover:text-slate-800 rounded-lg h-7 text-[10px] w-auto gap-1 px-1.5 font-bold focus:ring-0">
                         <SelectValue placeholder="Chế độ học" />
                       </SelectTrigger>
                       <SelectContent className="bg-white border border-slate-200 text-slate-805 text-xs">
                         <SelectItem value="chat">Giải bài & Chat</SelectItem>
                         <SelectItem value="summarize">Tóm tắt tài liệu</SelectItem>
-                        <SelectItem value="quiz">Tạo đề trắc nghiệm</SelectItem>
-                        <SelectItem value="notes">Tạo ghi chú học tập</SelectItem>
+                        <SelectItem value="quiz">Tạo trắc nghiệm</SelectItem>
+                        <SelectItem value="notes">Soạn ghi chú nhanh</SelectItem>
                       </SelectContent>
                     </Select>
                   </>
@@ -674,7 +699,7 @@ export default function AiHubPage() {
 
               <div className="flex items-center gap-2 pt-1.5">
                 {/* File Upload Icon */}
-                <label className="h-9 w-9 rounded-xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center cursor-pointer transition text-slate-500 border border-slate-200/50 shrink-0">
+                <label className="h-9.5 w-9.5 rounded-2xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center cursor-pointer transition text-slate-500 border border-slate-200 shrink-0">
                   <Paperclip className="h-4.5 w-4.5" />
                   <input
                     type="file"
@@ -689,28 +714,70 @@ export default function AiHubPage() {
                   type="text"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Hỏi bài tập Toán, Lý, Hóa... hoặc đính kèm ảnh đề."
-                  className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-xs py-1.5 placeholder-slate-400 text-slate-805 focus:outline-none font-semibold"
+                  placeholder="Gửi câu hỏi của bạn cho AI..."
+                  className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-xs py-1.5 placeholder-slate-400 text-slate-900 focus:outline-none font-semibold"
                   disabled={isSending}
                 />
 
                 <Button
                   type="submit"
                   disabled={isSending || (!prompt.trim() && attachedFiles.length === 0)}
-                  className="h-9 w-9 rounded-xl bg-slate-905 hover:bg-slate-800 text-white flex items-center justify-center shrink-0 p-0 shadow-2xs transition"
+                  className="h-9.5 w-9.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shrink-0 p-0 shadow-2xs transition cursor-pointer"
                 >
                   <Send className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </form>
-            <div className="text-[9px] text-slate-400 text-center flex items-center justify-center gap-1 font-semibold">
+            <div className="text-[9px] text-slate-400 text-center flex items-center justify-center gap-1 font-semibold select-none">
               <Info className="h-3 w-3 text-slate-350" />
-              <span>Học tập an toàn cùng TCK AI. Các câu trả lời dựa trên chương trình Bộ Giáo dục & Đào tạo.</span>
+              <span>Các câu trả lời từ AI chỉ dùng làm tài liệu tham khảo hỗ trợ quá trình học tập.</span>
             </div>
           </div>
         </div>
 
       </div>
+
+      {/* Image Zoom Modal Portal */}
+      <AnimatePresence>
+        {zoomImage && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setZoomImage(null)}
+              className="fixed inset-0 bg-slate-950/85"
+            />
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="relative max-w-3xl max-h-[90vh] z-10 overflow-hidden rounded-2xl border border-white/10"
+            >
+              {/* Close trigger */}
+              <button
+                onClick={() => setZoomImage(null)}
+                className="absolute top-4 right-4 h-8 w-8 rounded-full bg-slate-900/50 hover:bg-slate-900 text-white flex items-center justify-center transition border border-white/10"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={zoomImage}
+                alt="Zoomed attachment"
+                className="w-full h-full object-contain"
+              />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Onboarding Auth Modal Portal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        initialTab={authTab}
+      />
 
     </div>
   );
