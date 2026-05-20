@@ -40,9 +40,37 @@ export default function LandingPage({
   categories,
   grades,
   subjects,
-  isLoggedIn,
-  currentUser,
+  isLoggedIn: initialIsLoggedIn,
+  currentUser: initialCurrentUser,
 }: LandingPageProps) {
+  const [localUser, setLocalUser] = useState<any>(initialCurrentUser);
+  const [localIsLoggedIn, setLocalIsLoggedIn] = useState<boolean>(initialIsLoggedIn);
+
+  useEffect(() => {
+    setLocalUser(initialCurrentUser);
+    setLocalIsLoggedIn(initialIsLoggedIn);
+  }, [initialCurrentUser, initialIsLoggedIn]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        setLocalIsLoggedIn(true);
+        setLocalUser(session.user);
+      } else {
+        setLocalIsLoggedIn(false);
+        setLocalUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const currentUser = localUser;
+  const isLoggedIn = localIsLoggedIn;
+
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "register">("login");

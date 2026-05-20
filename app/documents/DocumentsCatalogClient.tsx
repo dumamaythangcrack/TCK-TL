@@ -39,9 +39,37 @@ export default function DocumentsCatalogClient({
   categories,
   grades,
   subjects,
-  isLoggedIn,
-  currentUser,
+  isLoggedIn: initialIsLoggedIn,
+  currentUser: initialCurrentUser,
 }: DocumentsCatalogClientProps) {
+  const [localUser, setLocalUser] = useState<any>(initialCurrentUser);
+  const [localIsLoggedIn, setLocalIsLoggedIn] = useState<boolean>(initialIsLoggedIn);
+
+  useEffect(() => {
+    setLocalUser(initialCurrentUser);
+    setLocalIsLoggedIn(initialIsLoggedIn);
+  }, [initialCurrentUser, initialIsLoggedIn]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        setLocalIsLoggedIn(true);
+        setLocalUser(session.user);
+      } else {
+        setLocalIsLoggedIn(false);
+        setLocalUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const currentUser = localUser;
+  const isLoggedIn = localIsLoggedIn;
+
   const [documents, setDocuments] = useState(initialDocuments);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);

@@ -32,7 +32,8 @@ import {
   GraduationCap,
   ChevronRight,
   Info,
-  Maximize2
+  Maximize2,
+  LogOut
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -113,6 +114,21 @@ export default function AiHubPage() {
       setSubjects(subs);
     }
     init();
+
+    // Subscribe to auth state changes dynamically
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setIsLoggedIn(!!session);
+      if (session) {
+        setCurrentUser(session.user);
+      } else {
+        setCurrentUser(null);
+        setConversations([]);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [supabase]);
 
   // Scroll to bottom when messages update
@@ -472,6 +488,19 @@ export default function AiHubPage() {
 
               {/* Sidebar Bottom Profile/Help */}
               <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-2 text-[10px] text-slate-550 select-none">
+                {isLoggedIn && currentUser && (
+                  <button
+                    onClick={async () => {
+                      const supabaseClient = createClient();
+                      await supabaseClient.auth.signOut();
+                      toast.success("Đã đăng xuất thành công.");
+                    }}
+                    className="flex items-center justify-center gap-1.5 w-full bg-red-50 hover:bg-red-100 text-red-650 font-bold py-2 rounded-xl border border-red-200/50 transition cursor-pointer text-xs mb-1"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Đăng xuất ({currentUser.email?.split("@")[0] || "Tôi"})
+                  </button>
+                )}
                 <div className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-black/[0.04] shadow-3xs">
                   <Brain className="h-4.5 w-4.5 text-blue-600 shrink-0" />
                   <div className="truncate">
