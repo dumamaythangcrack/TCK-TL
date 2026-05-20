@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import UploadModal from "@/components/modals/UploadModal";
 import AuthModal from "@/components/modals/AuthModal";
 import DocumentCard from "@/components/cards/DocumentCard";
+import UserDropdown from "@/components/layout/UserDropdown";
+import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import {
   Search,
   Brain,
@@ -109,7 +111,7 @@ export default function LandingPage({
   };
 
   return (
-    <div className="min-h-screen bg-[#f6f7fb] text-slate-900 flex flex-col justify-between relative font-sans overflow-x-hidden">
+    <div className="min-h-screen bg-[#f6f7fb] text-slate-900 flex flex-col justify-between relative font-sans overflow-x-hidden pb-16 md:pb-0">
       
       {/* Dynamic Background Mesh Glows */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none z-0" />
@@ -156,13 +158,8 @@ export default function LandingPage({
               Đăng tài liệu
             </Button>
 
-            {isLoggedIn ? (
-              <Link href="/dashboard">
-                <Button variant="outline" className="border-black/[0.06] bg-white/50 hover:bg-slate-100 text-slate-700 text-xs px-3 h-8 rounded-xl flex items-center gap-1.5 shadow-3xs transition-all duration-200">
-                  <User className="h-3.5 w-3.5 text-slate-450" />
-                  Dashboard
-                </Button>
-              </Link>
+            {isLoggedIn && currentUser ? (
+              <UserDropdown user={currentUser} />
             ) : (
               <Button
                 variant="outline"
@@ -332,6 +329,16 @@ export default function LandingPage({
 
       {/* Render Upload Modal */}
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
+
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav
+        isLoggedIn={isLoggedIn}
+        onUploadClick={() => setIsUploadOpen(true)}
+        onAuthClick={() => {
+          setAuthTab("login");
+          setIsAuthOpen(true);
+        }}
+      />
     </div>
   );
 }

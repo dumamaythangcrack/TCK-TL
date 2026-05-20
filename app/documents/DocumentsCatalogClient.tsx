@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import UploadModal from "@/components/modals/UploadModal";
 import AuthModal from "@/components/modals/AuthModal";
 import DocumentCard from "@/components/cards/DocumentCard";
+import UserDropdown from "@/components/layout/UserDropdown";
+import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import {
   Search,
   BookOpen,
@@ -167,7 +169,7 @@ export default function DocumentsCatalogClient({
   };
 
   return (
-    <div className="min-h-screen bg-[#f6f7fb] text-slate-900 flex flex-col justify-between relative font-sans">
+    <div className="min-h-screen bg-[#f6f7fb] text-slate-900 flex flex-col justify-between relative font-sans pb-16 md:pb-0">
       
       {/* 1. STICKY SLICK NAVBAR */}
       <header className="sticky top-0 z-40 w-full border-b border-black/[0.05] bg-white/70 backdrop-blur-md transition-all duration-300">
@@ -210,13 +212,8 @@ export default function DocumentsCatalogClient({
               Đăng tài liệu
             </Button>
 
-            {isLoggedIn ? (
-              <Link href="/dashboard">
-                <Button variant="outline" className="border-black/[0.06] bg-white/50 hover:bg-slate-100 text-slate-700 text-xs px-3 h-8 rounded-xl flex items-center gap-1.5 shadow-3xs transition-all duration-200">
-                  <User className="h-3.5 w-3.5 text-slate-450" />
-                  Dashboard
-                </Button>
-              </Link>
+            {isLoggedIn && currentUser ? (
+              <UserDropdown user={currentUser} />
             ) : (
               <Button
                 variant="outline"
@@ -364,7 +361,7 @@ export default function DocumentsCatalogClient({
 
           {/* Results Listings */}
           {isSearching ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {[...Array(6)].map((_, idx) => (
                 <div key={idx} className="bg-white border border-black/[0.05] rounded-2xl p-5 space-y-5 shadow-3xs animate-pulse">
                   <div className="h-32 bg-slate-100 rounded-xl shimmer" />
@@ -381,15 +378,31 @@ export default function DocumentsCatalogClient({
               ))}
             </div>
           ) : documents.length === 0 ? (
-            <div className="bg-white border border-black/[0.05] rounded-2xl p-16 text-center flex flex-col items-center gap-3 shadow-3xs">
-              <BookOpen className="h-10 w-10 text-slate-300 animate-bounce" />
-              <h3 className="font-bold text-sm text-slate-800">Không tìm thấy tài liệu phù hợp</h3>
-              <p className="text-[11px] text-slate-500 max-w-xs font-medium leading-relaxed">
-                Thử điều chỉnh lại từ khóa hoặc bỏ các bộ lọc môn học và lớp học để xem thêm nhiều tài liệu khác.
+            <div className="bg-white border border-black/[0.05] rounded-3xl p-12 text-center flex flex-col items-center gap-4 shadow-3xs max-w-md mx-auto mt-6">
+              <div className="h-12 w-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 mb-1">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              <h3 className="font-extrabold text-slate-900 text-sm">Chưa có tài liệu phù hợp</h3>
+              <p className="text-[11px] text-slate-500 max-w-xs font-semibold leading-relaxed">
+                Nền tảng chưa có tài liệu nào thuộc danh mục này. Hãy đóng góp và chia sẻ tài liệu hữu ích của bạn để tích luỹ lượt tải!
               </p>
+              <Button
+                onClick={() => {
+                  if (!isLoggedIn) {
+                    setAuthTab("login");
+                    setIsAuthOpen(true);
+                  } else {
+                    setIsUploadOpen(true);
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 h-9 rounded-xl flex items-center gap-1.5 shadow-2xs mt-1 transition-all"
+              >
+                <Plus className="h-4 w-4" />
+                Đăng tài liệu đầu tiên
+              </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {documents.map((doc) => (
                 <DocumentCard
                   key={doc.id}
@@ -418,6 +431,16 @@ export default function DocumentsCatalogClient({
 
       {/* Render Upload Modal */}
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
+
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav
+        isLoggedIn={isLoggedIn}
+        onUploadClick={() => setIsUploadOpen(true)}
+        onAuthClick={() => {
+          setAuthTab("login");
+          setIsAuthOpen(true);
+        }}
+      />
     </div>
   );
 }

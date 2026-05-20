@@ -1,8 +1,36 @@
 "use server";
 
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { ai } from "@/lib/ai/gemini";
+import { getBalancedGenAiClient, putKeyOnCooldown } from "@/lib/gemini/loadBalancer";
 import { revalidatePath } from "next/cache";
+
+/**
+ * Automatically cleans up chat threads older than 10 days.
+ */
+export async function cleanupOldChats() {
+  try {
+    const supabase = await createAdminClient();
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+    const dateStr = tenDaysAgo.toISOString();
+
+    console.log(`[Cleanup] Auto-cleaning chats older than: ${dateStr}`);
+    
+    // Delete ai_chats updated_at older than 10 days
+    const { error } = await supabase
+      .from("ai_chats")
+      .delete()
+      .lt("updated_at", dateStr);
+
+    if (error) {
+      console.error("[Cleanup] Error cleaning up old chats:", error);
+    } else {
+      console.log("[Cleanup] Old chats cleaned up successfully.");
+    }
+  } catch (err) {
+    console.error("[Cleanup] Unexpected error:", err);
+  }
+}
 
 interface ChatMessageRequest {
   chatId: string;
@@ -45,6 +73,9 @@ export async function createAiChat(title: string) {
  * Lists all chat threads for the current user.
  */
 export async function getAiChats() {
+  // Trigger cleanup of old chats in background
+  cleanupOldChats().catch((err) => console.error("[Cleanup Error]", err));
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -115,13 +146,6 @@ export async function getAiMessages(chatId: string) {
  * Implements extreme Vietnamese teacher logic for Math, Literature, English, Physics, Chemistry, Biology.
  */
 export async function sendAiChatMessage(data: ChatMessageRequest) {
-  if (!process.env.GEMINI_API_KEY) {
-    return {
-      success: false,
-      error: "Hệ thống chưa cấu hình khóa API Gemini (GEMINI_API_KEY). Vui lòng thêm biến môi trường này trong trang quản trị Vercel.",
-    };
-  }
-
   const isGuest = data.chatId === "guest-session";
   let user: any = null;
 
@@ -220,17 +244,46 @@ Quy tắc giảng dạy:
   }
 
   let response;
-  try {
-    response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: contents,
-      config: {
-        systemInstruction,
-      },
-    });
-  } catch (error: any) {
-    console.error("Gemini API Error in chat:", error);
-    const isOverloaded = error?.message?.includes("503") || error?.message?.includes("demand") || error?.status === "UNAVAILABLE";
+  let attempts = 0;
+  const maxAttempts = 3;
+  let lastError: any = null;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    let clientInfo;
+    try {
+      clientInfo = getBalancedGenAiClient();
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || "Hệ thống chưa cấu hình khóa API Gemini.",
+      };
+    }
+
+    try {
+      console.log(`[Gemini Chat] Running query (Attempt ${attempts}/${maxAttempts}) using: ${clientInfo.keyName}`);
+      response = await clientInfo.client.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: contents,
+        config: {
+          systemInstruction,
+        },
+      });
+      break; // Success! Break out of retry loop
+    } catch (error: any) {
+      console.error(`[Gemini Chat] Error on key ${clientInfo.keyName}:`, error);
+      lastError = error;
+      putKeyOnCooldown(clientInfo.rawKey);
+
+      if (attempts < maxAttempts) {
+        console.log(`[Gemini Chat] Attempt ${attempts} failed. Trying another key...`);
+        continue;
+      }
+    }
+  }
+
+  if (!response) {
+    const isOverloaded = lastError?.message?.includes("503") || lastError?.message?.includes("demand") || lastError?.status === "UNAVAILABLE";
     const userFriendlyError = isOverloaded
       ? "Mô hình AI hiện đang quá tải do nhu cầu sử dụng cao. Vui lòng thử lại sau ít phút!"
       : "Không thể kết nối với dịch vụ Gemini AI lúc này. Vui lòng thử lại.";
@@ -240,7 +293,7 @@ Quy tắc giảng dạy:
     };
   }
 
-    const aiResponseText = response.text || "AI không thể đưa ra câu trả lời vào lúc này.";
+  const aiResponseText = response.text || "AI không thể đưa ra câu trả lời vào lúc này.";
 
     if (isGuest) {
       return {

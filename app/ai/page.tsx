@@ -14,6 +14,8 @@ import {
 import { getSubjects } from "@/actions/taxonomy";
 import MarkdownRenderer from "@/components/viewers/MarkdownRenderer";
 import AuthModal from "@/components/modals/AuthModal";
+import UserDropdown from "@/components/layout/UserDropdown";
+import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import {
   Brain,
   Plus,
@@ -64,13 +66,39 @@ export default function AiHubPage() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"login" | "register">("login");
   const [zoomImage, setZoomImage] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const supabase = createClient();
+
+  // Abort stream on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsSending(false);
+      toast.info("Đã dừng tạo câu trả lời.");
+    }
+  };
 
   // Initialize
   useEffect(() => {
     async function init() {
+      // Auto-collapse history on mobile
+      if (typeof window !== "undefined" && window.innerWidth < 768) {
+        setIsHistoryOpen(false);
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       setIsLoggedIn(!!session);
       if (session) {
@@ -160,48 +188,71 @@ export default function AiHubPage() {
     }
   };
 
+  const processUploadedFiles = (files: File[]) => {
+    files.forEach((file) => {
+      if (file.size > 52428800) {
+        toast.error(`File "${file.name}" vượt quá giới hạn dung lượng 50MB!`);
+        return;
+      }
+
+      const isImg = file.type.startsWith("image/");
+      const reader = new FileReader();
+
+      reader.onloadend = () => {
+        if (isImg) {
+          setAttachedFiles((prev) => [
+            ...prev,
+            {
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              base64: reader.result as string,
+            },
+          ]);
+        } else {
+          const mockText = `[Đọc tệp ${file.name}]: Đây là nội dung tài liệu giả lập chứa các phần bài học chính về chương trình ôn tập kiểm tra học kỳ ${file.name}.`;
+          setAttachedFiles((prev) => [
+            ...prev,
+            {
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              textContext: mockText,
+            },
+          ]);
+        }
+      };
+
+      if (isImg) {
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsText(file.slice(0, 10000)); // read first 10kb
+      }
+    });
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      Array.from(e.target.files).forEach((file) => {
-        if (file.size > 52428800) {
-          toast.error(`File "${file.name}" vượt quá giới hạn dung lượng 50MB!`);
-          return;
-        }
+      processUploadedFiles(Array.from(e.target.files));
+    }
+  };
 
-        const isImg = file.type.startsWith("image/");
-        const reader = new FileReader();
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
 
-        reader.onloadend = () => {
-          if (isImg) {
-            setAttachedFiles((prev) => [
-              ...prev,
-              {
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                base64: reader.result as string,
-              },
-            ]);
-          } else {
-            const mockText = `[Đọc tệp ${file.name}]: Đây là nội dung tài liệu giả lập chứa các phần bài học chính về chương trình ôn tập kiểm tra học kỳ ${file.name}.`;
-            setAttachedFiles((prev) => [
-              ...prev,
-              {
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                textContext: mockText,
-              },
-            ]);
-          }
-        };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
 
-        if (isImg) {
-          reader.readAsDataURL(file);
-        } else {
-          reader.readAsText(file.slice(0, 10000)); // read first 10kb of text files
-        }
-      });
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processUploadedFiles(Array.from(e.dataTransfer.files));
     }
   };
 
@@ -218,45 +269,7 @@ export default function AiHubPage() {
 
     let targetChatId = activeChatId;
 
-    if (!isLoggedIn) {
-      // Allow guest quick chatbot solver (stateless / single session)
-      setIsSending(true);
-      const imagesBase64 = attachedFiles.filter((f) => f.base64).map((f) => f.base64!);
-      const combinedDocsContext = attachedFiles.filter((f) => f.textContext).map((f) => f.textContext!).join("\n");
-
-      // Add user message locally
-      const userMsg = { role: "user", content: prompt };
-      setMessages((prev) => [...prev, userMsg]);
-      setPrompt("");
-      setAttachedFiles([]);
-
-      try {
-        const geminiRes = await sendAiChatMessage({
-          chatId: "guest-session",
-          prompt: userMsg.content,
-          imagesBase64,
-          fileContext: combinedDocsContext || undefined,
-          subject: selectedSubject || undefined,
-          mode: learningMode,
-        });
-
-        if (geminiRes.success) {
-          setMessages((prev) => [...prev, geminiRes.message]);
-        } else {
-          toast.error(geminiRes.error || "Gặp lỗi kết nối AI.");
-          setMessages((prev) => prev.slice(0, -1));
-        }
-      } catch (err: any) {
-        toast.error(err.message || "Gặp lỗi kết nối AI.");
-        setMessages((prev) => prev.slice(0, -1));
-      } finally {
-        setIsSending(false);
-      }
-      return;
-    }
-
-    // Authenticated path
-    if (!targetChatId) {
+    if (isLoggedIn && !targetChatId) {
       try {
         const newChat = await createAiChat(prompt.slice(0, 30) || "Cuộc trò chuyện mới");
         setChats((prev) => [newChat, ...prev]);
@@ -268,6 +281,8 @@ export default function AiHubPage() {
       }
     }
 
+    const currentChatId = isLoggedIn ? targetChatId! : "guest-session";
+
     setIsSending(true);
     const imagesBase64 = attachedFiles.filter((f) => f.base64).map((f) => f.base64!);
     const combinedDocsContext = attachedFiles.filter((f) => f.textContext).map((f) => f.textContext!).join("\n");
@@ -276,30 +291,78 @@ export default function AiHubPage() {
     setPrompt("");
     setAttachedFiles([]);
 
-    // Optimistically update message logs locally
-    setMessages((prev) => [...prev, { role: "user", content: activePrompt }]);
+    // Optimistically update message logs locally with user message and empty model message
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: activePrompt },
+      { role: "model", content: "" }
+    ]);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      const res = await sendAiChatMessage({
-        chatId: targetChatId!,
-        prompt: activePrompt,
-        imagesBase64,
-        fileContext: combinedDocsContext || undefined,
-        subject: selectedSubject || undefined,
-        mode: learningMode,
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatId: currentChatId,
+          prompt: activePrompt,
+          imagesBase64,
+          fileContext: combinedDocsContext || undefined,
+          subject: selectedSubject || undefined,
+          mode: learningMode,
+        }),
+        signal: controller.signal,
       });
 
-      if (res.success) {
-        await loadMessages(targetChatId!);
-      } else {
-        toast.error(res.error || "Không thể gửi.");
-        setMessages((prev) => prev.slice(0, -1));
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Gặp lỗi khi kết nối dịch vụ AI.");
       }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Không thể khởi tạo bộ đọc stream.");
+      }
+
+      const decoder = new TextDecoder("utf-8");
+      let aiText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        aiText += decoder.decode(value, { stream: true });
+
+        // Update the last message (model) chunk by chunk
+        setMessages((prev) => {
+          const updated = [...prev];
+          if (updated.length > 0) {
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              content: aiText,
+            };
+          }
+          return updated;
+        });
+      }
+
+      if (isLoggedIn) {
+        await loadChats();
+      }
+
     } catch (err: any) {
-      toast.error(err.message || "Không thể gửi.");
-      setMessages((prev) => prev.slice(0, -1));
+      if (err.name === "AbortError") {
+        console.log("Stream successfully aborted.");
+      } else {
+        toast.error(err.message || "Không thể gửi.");
+        // Rollback optimistic messages
+        setMessages((prev) => prev.slice(0, -2));
+      }
     } finally {
       setIsSending(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -426,7 +489,30 @@ export default function AiHubPage() {
       </AnimatePresence>
 
       {/* 2. MAIN HUB WORKSPACE */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden relative bg-[#f6f7fb]">
+      <div 
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className="flex-1 flex flex-col h-screen overflow-hidden relative bg-[#f6f7fb]"
+      >
+        <AnimatePresence>
+          {isDragging && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-blue-600/10 backdrop-blur-xs z-50 flex flex-col items-center justify-center pointer-events-none border-2 border-dashed border-blue-500/80 m-4 rounded-3xl"
+            >
+              <div className="bg-white px-6 py-5 rounded-2xl shadow-xl flex flex-col items-center gap-3 border border-blue-100 max-w-sm text-center">
+                <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 animate-bounce">
+                  <Paperclip className="h-6 w-6" />
+                </div>
+                <h3 className="text-sm font-extrabold text-slate-900">Thả tệp tin để tải lên</h3>
+                <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">Hỗ trợ hình ảnh (PNG, JPG), PDF và tài liệu Word dưới 50MB.</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         {/* Workspace Sticky Header */}
         <header className="h-14 border-b border-black/[0.05] bg-white/70 backdrop-blur-md px-4 md:px-6 flex items-center justify-between shrink-0 z-10 select-none">
@@ -458,6 +544,12 @@ export default function AiHubPage() {
                 Về Trang chủ
               </Button>
             </Link>
+            
+            {isLoggedIn && currentUser && (
+              <div className="border-l border-slate-200 pl-2 ml-1">
+                <UserDropdown user={currentUser} />
+              </div>
+            )}
           </div>
         </header>
 
@@ -551,7 +643,7 @@ export default function AiHubPage() {
             </div>
           ) : (
             // Active Conversation bubbles
-            <div className="max-w-2xl mx-auto space-y-6 pb-40 md:pb-32 font-chat">
+            <div className="max-w-2xl mx-auto space-y-6 pb-52 md:pb-36 font-chat">
               {messages.map((msg, index) => (
                 <div
                   key={index}
@@ -573,7 +665,9 @@ export default function AiHubPage() {
                     {msg.role === "user" ? (
                       <p className="whitespace-pre-wrap font-semibold text-xs leading-relaxed">{msg.content}</p>
                     ) : (
-                      <MarkdownRenderer content={msg.content} />
+                      <div className={index === messages.length - 1 && isSending ? "streaming-cursor" : ""}>
+                        <MarkdownRenderer content={msg.content} />
+                      </div>
                     )}
                   </div>
 
@@ -585,13 +679,13 @@ export default function AiHubPage() {
                 </div>
               ))}
               
-              {isSending && (
+              {isSending && messages[messages.length - 1]?.content === "" && (
                 <div className="flex gap-4 justify-start animate-fade-in font-chat">
                   <div className="h-8 w-8 rounded-xl bg-white border border-black/[0.05] flex items-center justify-center text-slate-700 shrink-0">
                     <Sparkles className="h-4 w-4 animate-spin text-blue-500" />
                   </div>
-                  <div className="bg-white border border-black/[0.05] p-3 px-4 rounded-2xl text-xs text-slate-500 flex items-center gap-2 shadow-3xs">
-                    <span className="font-bold animate-pulse text-blue-600">AI đang phân tích đề và chuẩn bị bài giải...</span>
+                  <div className="bg-white border border-black/[0.05] p-3 px-4 rounded-2xl text-xs text-slate-550 flex items-center gap-2 shadow-3xs font-semibold">
+                    <span className="font-bold animate-pulse text-blue-600">AI đang suy nghĩ...</span>
                   </div>
                 </div>
               )}
@@ -618,9 +712,20 @@ export default function AiHubPage() {
                         alt={file.name}
                         className="absolute inset-0 w-full h-full object-cover z-0"
                       />
+                    ) : file.name.endsWith(".pdf") ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-rose-50/80 border border-rose-100 z-0">
+                        <FileText className="h-6 w-6 text-rose-600" />
+                        <span className="text-[9px] font-extrabold text-rose-700 mt-1 select-none">PDF</span>
+                      </div>
+                    ) : file.name.endsWith(".docx") || file.name.endsWith(".doc") ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-50/80 border border-blue-100 z-0">
+                        <FileText className="h-6 w-6 text-blue-600" />
+                        <span className="text-[9px] font-extrabold text-blue-700 mt-1 select-none">DOCX</span>
+                      </div>
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-slate-50 z-0">
-                        <FileText className="h-5 w-5 text-slate-400" />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 z-0">
+                        <FileText className="h-6 w-6 text-slate-500" />
+                        <span className="text-[9px] font-extrabold text-slate-600 mt-1 select-none">DOC</span>
                       </div>
                     )}
 
@@ -655,6 +760,20 @@ export default function AiHubPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {isSending && (
+              <div className="flex justify-center mb-2 animate-fade-in">
+                <Button
+                  type="button"
+                  onClick={handleStopGeneration}
+                  variant="outline"
+                  className="bg-white hover:bg-slate-50 border-slate-200/80 text-xs font-bold px-4 py-2 rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition text-rose-600 hover:text-rose-700 h-9"
+                >
+                  <div className="h-2 w-2 bg-rose-600 rounded-sm animate-pulse" />
+                  Dừng tạo câu trả lời
+                </Button>
               </div>
             )}
 
@@ -715,7 +834,7 @@ export default function AiHubPage() {
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Gửi câu hỏi của bạn cho AI..."
-                  className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-xs py-1.5 placeholder-slate-400 text-slate-900 focus:outline-none font-semibold"
+                  className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-base md:text-xs py-1.5 placeholder-slate-400 text-slate-900 focus:outline-none font-semibold"
                   disabled={isSending}
                 />
 

@@ -165,6 +165,21 @@
     background-size: 200% 100%;
     animation: shimmer-anim 1.5s infinite;
   }
+  
+  .streaming-cursor::after {
+    content: "▋";
+    display: inline-block;
+    vertical-align: middle;
+    animation: blink 0.8s step-end infinite;
+    margin-left: 2px;
+    color: #2563eb;
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 @keyframes shimmer-anim {

@@ -1,11 +1,16 @@
-import { GoogleGenAI } from "@google/genai";
+import { getBalancedGenAiClient, putKeyOnCooldown } from "@/lib/gemini/loadBalancer";
 
-// Ensure we have an API key, otherwise fail gracefully in dev
-const apiKey = process.env.GEMINI_API_KEY || "";
-
-export const ai = new GoogleGenAI({
-  apiKey: apiKey,
-});
+// Export placeholder 'ai' instance for backward compatibility with external imports
+let defaultClient: any = null;
+try {
+  const balanced = getBalancedGenAiClient();
+  defaultClient = balanced.client;
+} catch (e) {
+  // If no keys configured yet, create empty dummy client
+  const { GoogleGenAI } = require("@google/genai");
+  defaultClient = new GoogleGenAI({ apiKey: "" });
+}
+export const ai = defaultClient;
 
 export async function solveProblemWithGemini(prompt: string, imagesBase64: string[] = []) {
   try {
@@ -13,7 +18,7 @@ export async function solveProblemWithGemini(prompt: string, imagesBase64: strin
 
     if (imagesBase64 && imagesBase64.length > 0) {
       for (const base64 of imagesBase64) {
-        // Strip the data URL part if present (e.g., data:image/png;base64,...)
+        // Strip data URL header
         const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
         const mimeType = base64.includes('jpeg') || base64.includes('jpg') ? 'image/jpeg' : 'image/png';
         
@@ -26,7 +31,6 @@ export async function solveProblemWithGemini(prompt: string, imagesBase64: strin
       }
     }
 
-    let response;
     const systemInstruction = `Bạn là AI học tập của TCK Tài Liệu. Mục tiêu: Giải bài tập cực kỳ chi tiết, từng bước, dễ hiểu, chuẩn giáo viên, thân thiện.
 Quy tắc:
 - Không trả lời ngắn cộc lốc.
@@ -36,27 +40,50 @@ Quy tắc:
 - Toán: ghi công thức, thay số, giải từng bước, kiểm tra lại kết quả.
 - Sử dụng định dạng markdown rõ ràng, tiêu đề rõ, bullet hợp lý, công thức đẹp, có kết luận cuối cùng.`;
 
-    try {
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: contents,
-        config: {
-          systemInstruction,
-        }
-      });
+    let attempts = 0;
+    const maxAttempts = 3;
+    let lastError: any = null;
 
-      return response.text;
-    } catch (error: any) {
-      console.error("Gemini API Error:", error);
-      const isOverloaded = error?.message?.includes("503") || error?.message?.includes("demand") || error?.status === "UNAVAILABLE";
-      if (isOverloaded) {
-        throw new Error("Mô hình AI hiện đang quá tải do nhu cầu sử dụng cao. Vui lòng thử lại sau ít phút!");
+    while (attempts < maxAttempts) {
+      attempts++;
+      let clientInfo;
+      try {
+        clientInfo = getBalancedGenAiClient();
+      } catch (err: any) {
+        throw new Error(err.message || "Hệ thống chưa cấu hình khóa API Gemini.");
       }
-      throw new Error("Không thể kết nối với dịch vụ Gemini AI lúc này. Vui lòng thử lại.");
+
+      try {
+        console.log(`[Gemini] Running solveProblem (Attempt ${attempts}/${maxAttempts}) using: ${clientInfo.keyName}`);
+        const response = await clientInfo.client.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: contents,
+          config: {
+            systemInstruction,
+          }
+        });
+
+        return response.text;
+      } catch (error: any) {
+        console.error(`[Gemini] Error on key ${clientInfo.keyName}:`, error);
+        lastError = error;
+        putKeyOnCooldown(clientInfo.rawKey);
+
+        if (attempts < maxAttempts) {
+          console.log(`[Gemini] Attempt ${attempts} failed. Trying another key...`);
+          continue;
+        }
+      }
     }
+
+    const isOverloaded = lastError?.message?.includes("503") || lastError?.message?.includes("demand") || lastError?.status === "UNAVAILABLE";
+    if (isOverloaded) {
+      throw new Error("Mô hình AI hiện đang quá tải do nhu cầu sử dụng cao. Vui lòng thử lại sau ít phút!");
+    }
+    throw new Error("Không thể kết nối với dịch vụ Gemini AI lúc này. Vui lòng thử lại.");
+
   } catch (error: any) {
     console.error("solveProblemWithGemini Error:", error);
     throw error;
   }
 }
-

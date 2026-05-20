@@ -127,10 +127,10 @@ export default function AuthModal({ isOpen, onClose, initialTab = "login" }: Aut
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: "spring", duration: 0.4 }}
-            className="relative w-full max-w-4xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-black/[0.05] grid grid-cols-1 md:grid-cols-12 max-h-[90vh] md:max-h-[600px] z-10"
+            className="relative w-full max-w-[420px] md:max-w-4xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-black/[0.05] grid grid-cols-1 md:grid-cols-12 max-h-[90vh] md:max-h-[600px] z-10"
           >
             {/* Left Side: Onboarding & Guidance Column */}
-            <div className="md:col-span-5 bg-slate-900 text-white p-8 flex flex-col justify-between relative overflow-hidden select-none">
+            <div className="hidden md:flex md:col-span-5 bg-slate-900 text-white p-8 flex-col justify-between relative overflow-hidden select-none">
               {/* Subtle visual glow */}
               <div className="absolute -top-24 -left-24 w-64 h-64 bg-blue-600/25 rounded-full blur-3xl" />
               <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-indigo-600/25 rounded-full blur-3xl" />
@@ -197,7 +197,7 @@ export default function AuthModal({ isOpen, onClose, initialTab = "login" }: Aut
             </div>
 
             {/* Right Side: Auth Forms Column */}
-            <div className="md:col-span-7 p-8 flex flex-col justify-between overflow-y-auto">
+            <div className="col-span-1 md:col-span-7 p-6 sm:p-8 flex flex-col justify-between overflow-y-auto">
               {/* Close Trigger */}
               <button
                 onClick={onClose}
