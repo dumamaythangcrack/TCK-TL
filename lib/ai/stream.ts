@@ -12,13 +12,13 @@ async function generateChatTitle(prompt: string): Promise<string> {
       model: "gemini-2.0-flash-lite",
       contents: [{
         role: "user",
-        parts: [{ text: `Tạo tiêu đề ngắn gọn (tối đa 6 từ, không dùng dấu ngoặc kép) cho cuộc trò chuyện bắt đầu bằng câu hỏi sau. Chỉ trả về tiêu đề, không giải thích:\n"${prompt.slice(0, 200)}"` }]
+        parts: [{ text: `Dựa trên tin nhắn đầu tiên của người dùng, hãy tạo tiêu đề hội thoại ngắn gọn bằng tiếng Việt. Tối đa 35 ký tự. Không dùng dấu ngoặc kép. Không markdown. Không thêm dấu chấm cuối câu. Viết tự nhiên như tiêu đề ChatGPT.\nTin nhắn đầu tiên: "${prompt.slice(0, 200)}"` }]
       }],
     });
     const title = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    return title ? title.slice(0, 60) : prompt.slice(0, 40);
+    return title ? title.replace(/^[".]+|[".\s]+$/g, "").slice(0, 45) : prompt.slice(0, 35);
   } catch {
-    return prompt.slice(0, 40);
+    return prompt.slice(0, 35);
   }
 }
 
@@ -64,7 +64,6 @@ export function createGeminiStreamResponse(params: StreamResponseParams): Respon
             controller.enqueue(encoder.encode(text));
           }
         }
-        controller.close();
       } catch (err: any) {
         console.error("[AI Stream] Chunk generation error:", err?.message);
         putKeyOnCooldown(rawKey);
@@ -74,7 +73,7 @@ export function createGeminiStreamResponse(params: StreamResponseParams): Respon
         return;
       }
 
-      // Trigger database operations and auto-summarization asynchronously on stream end
+      // Process database writes and titles BEFORE closing the stream to avoid client race conditions
       if (!isGuest && user && aiText) {
         try {
           const adminSupabase = await createAdminClient();
@@ -116,7 +115,11 @@ export function createGeminiStreamResponse(params: StreamResponseParams): Respon
           });
         } catch (dbErr) {
           console.error("[AI Stream] DB persist error (non-fatal):", dbErr);
+        } finally {
+          controller.close();
         }
+      } else {
+        controller.close();
       }
     },
     cancel() {

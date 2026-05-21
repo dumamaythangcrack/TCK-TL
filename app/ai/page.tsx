@@ -11,7 +11,7 @@ import {
   renameAiChat,
 } from "@/actions/ai";
 import { getSubjects } from "@/actions/taxonomy";
-import MarkdownRenderer from "@/components/viewers/MarkdownRenderer";
+import MarkdownRenderer, { loadKatex } from "@/components/viewers/MarkdownRenderer";
 import AuthModal from "@/components/modals/AuthModal";
 import UserDropdown from "@/components/layout/UserDropdown";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
@@ -52,6 +52,8 @@ import {
   Globe,
   Code2,
   Loader2,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -228,10 +230,12 @@ interface AttachedFile {
 
 
 interface Message {
+  id: string;
   role: "user" | "model";
   content: string;
   isStreaming?: boolean;
   isError?: boolean;
+  status?: "streaming" | "sent" | "error" | "retrying";
 }
 
 // ─── Memoised message bubble ──────────────────────────────────────────────────
@@ -297,7 +301,7 @@ const MessageBubble = memo(function MessageBubble({
             <p className="whitespace-pre-wrap font-semibold text-xs leading-relaxed">
               {msg.content}
             </p>
-          ) : msg.isStreaming && !msg.content ? (
+          ) : (msg.isStreaming && !msg.content) || msg.status === "retrying" ? (
             /* Premium shimmer loading skeleton */
             <div className="space-y-2.5 w-64 md:w-80 py-1">
               <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-3/4" />
@@ -306,7 +310,9 @@ const MessageBubble = memo(function MessageBubble({
               <p className="text-[10px] text-slate-400 font-bold mt-2 animate-pulse flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
                 <span>
-                  {showFallbackMsg 
+                  {msg.status === "retrying"
+                    ? msg.content || "Hệ thống AI đang kết nối lại..."
+                    : showFallbackMsg 
                     ? "AI đang chuyển sang máy chủ dự phòng..." 
                     : "Đang khởi động kết nối AI..."}
                 </span>
@@ -458,6 +464,22 @@ export default function AiHubPage() {
     message: "Hệ thống AI hoạt động ổn định",
   });
 
+  // V2 and Voice states
+  const [isBooted, setIsBooted] = useState(false);
+  const [loadingText, setLoadingText] = useState("Đang khởi tạo hệ thống AI...");
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [recognitionLanguage, setRecognitionLanguage] = useState("vi-VN");
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+
+  // Refs
+  const currentRequestIdRef = useRef(0);
+  const skipLoadMessagesRef = useRef(false);
+  const isRecordingRef = useRef(false);
+  const recognitionRef = useRef<any>(null);
+  const recordingIntervalRef = useRef<any>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -508,6 +530,14 @@ export default function AiHubPage() {
       if (typeof window !== "undefined") {
         window.speechSynthesis.cancel();
       }
+      clearInterval(recordingIntervalRef.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.error(e);
+        }
+      }
     };
   }, []);
 
@@ -553,30 +583,78 @@ export default function AiHubPage() {
     }
 
     async function init() {
-      const startTime = Date.now();
+      const minBootTime = 4000;
+      const start = Date.now();
+
+      // Loading texts rotation
+      const loadingTexts = [
+        "Đang khởi tạo AI...",
+        "Đang tải lịch sử trò chuyện...",
+        "Đang tối ưu mô hình thông minh...",
+        "Đang đồng bộ dữ liệu...",
+        "Đang tải cấu hình KaTeX..."
+      ];
+      let textIdx = 0;
+      const textInterval = setInterval(() => {
+        textIdx = (textIdx + 1) % loadingTexts.length;
+        setLoadingText(loadingTexts[textIdx]);
+      }, 1000);
+
       try {
         await fetchHealth();
       } catch (e) {
         console.error("fetchHealth on init error:", e);
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsLoggedIn(!!session);
-      if (session) {
-        setCurrentUser(session.user);
-        await loadChats();
-      } else {
+      const preloadChats = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        setIsLoggedIn(!!session);
+        if (session) {
+          setCurrentUser(session.user);
+          try {
+            const list = await getAiChats();
+            setChats(list);
+            if (list.length > 0 && !activeChatId) {
+              setActiveChatId(list[0].id);
+            }
+          } catch (err) {
+            console.error("loadChats error during boot:", err);
+          }
+        }
         setIsLoadingChats(false);
-      }
-      const subs = await getSubjects();
-      setSubjects(subs);
+      };
 
-      // Ensure boot loader overlay stays for at least 2 seconds
-      const elapsed = Date.now() - startTime;
-      const delay = Math.max(0, 2000 - elapsed);
-      setTimeout(() => {
-        setIsAiReady(true);
-      }, delay);
+      const preloadSubjects = async () => {
+        try {
+          const subs = await getSubjects();
+          setSubjects(subs);
+        } catch (e) {
+          console.error("getSubjects error during boot:", e);
+        }
+      };
+
+      const preloadKatex = async () => {
+        try {
+          await loadKatex();
+        } catch (e) {
+          console.error("loadKatex error during boot:", e);
+        }
+      };
+
+      await Promise.all([
+        preloadChats(),
+        preloadSubjects(),
+        preloadKatex(),
+      ]);
+
+      clearInterval(textInterval);
+
+      const elapsed = Date.now() - start;
+      if (elapsed < minBootTime) {
+        await new Promise((resolve) => setTimeout(resolve, minBootTime - elapsed));
+      }
+      setIsAiReady(true);
+      setIsBooted(true);
     }
     init();
 
@@ -631,12 +709,141 @@ export default function AiHubPage() {
     }
   };
 
+  // ─── Speech recognition configuration ──────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setIsSpeechSupported(true);
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = recognitionLanguage;
+
+        rec.onstart = () => {
+          setRecordingDuration(0);
+          recordingIntervalRef.current = setInterval(() => {
+            setRecordingDuration((prev) => prev + 1);
+          }, 1000);
+        };
+
+        rec.onresult = (event: any) => {
+          let finalTrans = "";
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTrans += event.results[i][0].transcript;
+            }
+          }
+          if (finalTrans) {
+            setPrompt((prev) => {
+              const spacing = prev && !prev.endsWith(" ") ? " " : "";
+              return prev + spacing + finalTrans;
+            });
+          }
+        };
+
+        rec.onend = () => {
+          if (isRecordingRef.current) {
+            try {
+              recognitionRef.current.start();
+            } catch (e) {
+              console.error("Failed to restart speech recognition:", e);
+            }
+          } else {
+            clearInterval(recordingIntervalRef.current);
+          }
+        };
+
+        rec.onerror = (e: any) => {
+          console.error("Speech recognition error:", e);
+          if (e.error === "no-speech") {
+            return;
+          }
+          toast.error("Lỗi nhận diện giọng nói: " + e.error);
+        };
+
+        recognitionRef.current = rec;
+      }
+    }
+    return () => {
+      clearInterval(recordingIntervalRef.current);
+    };
+  }, [recognitionLanguage]);
+
+  const toggleRecognitionLanguage = (lang: string) => {
+    if (lang === recognitionLanguage) return;
+    setRecognitionLanguage(lang);
+    if (isRecording) {
+      isRecordingRef.current = false;
+      recognitionRef.current?.stop();
+
+      setTimeout(() => {
+        isRecordingRef.current = true;
+        setIsRecording(true);
+        recognitionRef.current.lang = lang;
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          console.error(e);
+        }
+      }, 300);
+    }
+  };
+
+  const startRecording = () => {
+    if (!isSpeechSupported || !recognitionRef.current) {
+      toast.error("Trình duyệt không hỗ trợ nhận diện giọng nói.");
+      return;
+    }
+    if (isRecording) return;
+
+    isRecordingRef.current = true;
+    setIsRecording(true);
+    try {
+      recognitionRef.current.start();
+      toast.success("Đang lắng nghe...");
+    } catch (e) {
+      console.error("Speech recognition start failed:", e);
+      isRecordingRef.current = false;
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    isRecordingRef.current = false;
+    setIsRecording(false);
+    clearInterval(recordingIntervalRef.current);
+    try {
+      recognitionRef.current?.stop();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
 
   // ── Scroll to bottom ────────────────────────────────────────────────────────
-  const scrollToBottom = useCallback(() => {
-    if (typeof window !== "undefined") {
+  const isNearBottom = () => {
+    const container = chatContainerRef.current;
+    if (!container) return true;
+    const { scrollHeight, scrollTop, clientHeight } = container;
+    return scrollHeight - scrollTop - clientHeight < 120;
+  };
+
+  const scrollToBottom = useCallback((force = false) => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+    if (force || isNearBottom()) {
       window.requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: "smooth"
+        });
       });
     }
   }, []);
@@ -654,7 +861,11 @@ export default function AiHubPage() {
     }
 
     if (activeChatId) {
-      loadMessages(activeChatId);
+      if (skipLoadMessagesRef.current) {
+        skipLoadMessagesRef.current = false;
+      } else {
+        loadMessages(activeChatId);
+      }
     } else {
       setMessages([]);
     }
@@ -679,29 +890,34 @@ export default function AiHubPage() {
   };
 
   const loadMessages = async (chatId: string) => {
+    const requestId = ++currentRequestIdRef.current;
     try {
       const msgs = await getAiMessages(chatId);
-      setMessages(msgs.map((m: any) => ({ role: m.role, content: m.content })));
+      if (requestId !== currentRequestIdRef.current) return;
+      setMessages(msgs.map((m: any) => ({
+        id: m.id || crypto.randomUUID(),
+        role: m.role,
+        content: m.content,
+        status: "sent"
+      })));
     } catch {
+      if (requestId !== currentRequestIdRef.current) return;
       toast.error("Không thể tải tin nhắn.");
     }
   };
 
   // ─── Actions ─────────────────────────────────────────────────────────────────
 
-  const handleCreateNewChat = async () => {
-    if (!isLoggedIn) { setAuthTab("login"); setIsAuthOpen(true); return; }
-    setIsCreatingChat(true);
-    try {
-      const newChat = await createAiChat("Cuộc hội thoại học tập mới");
-      setChats((prev) => [newChat, ...prev]);
-      setActiveChatId(newChat.id);
-      setMessages([]);
-    } catch (err: any) {
-      toast.error(err.message || "Không thể tạo cuộc hội thoại.");
-    } finally {
-      setIsCreatingChat(false);
+  const handleCreateNewChat = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsSending(false);
     }
+    setActiveChatId(null);
+    setMessages([]);
+    setAttachedFiles([]);
+    setPrompt("");
   };
 
   const handleDeleteChat = async (e: React.MouseEvent, chatId: string) => {
@@ -957,7 +1173,8 @@ export default function AiHubPage() {
     let targetChatId = activeChatId;
     if (isLoggedIn && !targetChatId) {
       try {
-        const newChat = await createAiChat(text.slice(0, 40) || "Cuộc trò chuyện mới");
+        const newChat = await createAiChat(text.slice(0, 35) || "Cuộc trò chuyện mới");
+        skipLoadMessagesRef.current = true;
         setChats((prev) => [newChat, ...prev]);
         setActiveChatId(newChat.id);
         targetChatId = newChat.id;
@@ -975,91 +1192,144 @@ export default function AiHubPage() {
     setAttachedFiles([]);
     setIsSending(true);
 
+    const userMsgId = crypto.randomUUID();
+    const modelMsgId = crypto.randomUUID();
+
     // Optimistic UI — add user message + empty AI streaming bubble
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: text },
-      { role: "model", content: "", isStreaming: true },
+      { id: userMsgId, role: "user", content: text, status: "sent" },
+      { id: modelMsgId, role: "model", content: "", isStreaming: true, status: "streaming" },
     ]);
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+    let success = false;
+    let attempt = 0;
+    const maxAttempts = 3;
 
-    try {
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId: currentChatId,
-          prompt: text,
-          imagesBase64,
-          fileContext: combinedDocsContext || undefined,
-          subject: currentSubjectMode !== "general" ? currentSubjectMode : undefined,
-          mode: learningMode,
-          preferences,
-        }),
-        signal: controller.signal,
-      });
+    while (attempt < maxAttempts && !success) {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || "Lỗi kết nối AI.");
-      }
+      try {
+        const response = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chatId: currentChatId,
+            prompt: text,
+            imagesBase64,
+            fileContext: combinedDocsContext || undefined,
+            subject: currentSubjectMode !== "general" ? currentSubjectMode : undefined,
+            mode: learningMode,
+            preferences,
+          }),
+          signal: controller.signal,
+        });
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("Không thể đọc stream.");
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || "Lỗi kết nối AI.");
+        }
 
-      const decoder = new TextDecoder("utf-8");
-      let aiText = "";
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("Không thể đọc stream.");
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        aiText += decoder.decode(value, { stream: true });
+        const decoder = new TextDecoder("utf-8");
+        let aiText = "";
+        let lastUpdate = 0;
+        const THROTTLE_MS = 60;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          aiText += decoder.decode(value, { stream: true });
+          
+          const now = Date.now();
+          if (now - lastUpdate >= THROTTLE_MS) {
+            setMessages((prev) => {
+              const updated = [...prev];
+              const idx = updated.findIndex((m) => m.id === modelMsgId);
+              if (idx !== -1) {
+                updated[idx] = {
+                  ...updated[idx],
+                  content: aiText,
+                  isStreaming: true,
+                  status: "streaming",
+                };
+              }
+              return updated;
+            });
+            lastUpdate = now;
+          }
+        }
+
+        // Finalise — remove streaming flag
         setMessages((prev) => {
           const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last?.role === "model") {
-            updated[updated.length - 1] = { ...last, content: aiText, isStreaming: true };
+          const idx = updated.findIndex((m) => m.id === modelMsgId);
+          if (idx !== -1) {
+            updated[idx] = {
+              ...updated[idx],
+              content: aiText,
+              isStreaming: false,
+              status: "sent",
+            };
           }
           return updated;
         });
+
+        success = true;
+        if (isLoggedIn) loadChats();
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          setIsSending(false);
+          abortControllerRef.current = null;
+          return;
+        }
+
+        attempt++;
+        if (attempt < maxAttempts) {
+          const delay = 2000 * Math.pow(2, attempt - 1);
+          setMessages((prev) => {
+            const updated = [...prev];
+            const idx = updated.findIndex((m) => m.id === modelMsgId);
+            if (idx !== -1) {
+              updated[idx] = {
+                ...updated[idx],
+                content: `⚠️ Đang thử kết nối lại... (Lần ${attempt}/${maxAttempts} - Chờ ${delay / 1000}s)`,
+                status: "retrying",
+                isStreaming: true,
+              };
+            }
+            return updated;
+          });
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          // Out of attempts
+          const errorMessage = err.message || "Không thể gửi. Vui lòng thử lại.";
+          toast.error(errorMessage);
+
+          setMessages((prev) => {
+            const updated = [...prev];
+            const idx = updated.findIndex((m) => m.id === modelMsgId);
+            if (idx !== -1) {
+              updated[idx] = {
+                ...updated[idx],
+                content: "⚠️ AI đang bận, vui lòng thử lại sau vài giây.",
+                isError: true,
+                isStreaming: false,
+                status: "error",
+              };
+            }
+            return updated;
+          });
+        }
+      } finally {
+        if (success) {
+          setIsSending(false);
+          abortControllerRef.current = null;
+        }
       }
-
-      // Finalise — remove streaming flag
-      setMessages((prev) => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last?.role === "model") {
-          updated[updated.length - 1] = { ...last, isStreaming: false };
-        }
-        return updated;
-      });
-
-      if (isLoggedIn) loadChats();
-    } catch (err: any) {
-      if (err.name === "AbortError") return; // user stopped, already handled
-
-      const errorMessage = err.message || "Không thể gửi. Vui lòng thử lại.";
-      toast.error(errorMessage);
-
-      // Replace empty AI bubble with error message
-      setMessages((prev) => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last?.role === "model" && last.isStreaming) {
-          updated[updated.length - 1] = {
-            role: "model",
-            content: "⚠️ AI đang bận, vui lòng thử lại sau vài giây.",
-            isError: true,
-            isStreaming: false,
-          };
-        }
-        return updated;
-      });
-    } finally {
-      setIsSending(false);
-      abortControllerRef.current = null;
     }
   };
 
@@ -1096,6 +1366,12 @@ export default function AiHubPage() {
       className="min-h-screen bg-[#f6f7fb] text-slate-900 flex flex-col md:flex-row relative font-sans overflow-hidden"
       style={{ height: "100dvh" }}
     >
+      <style>{`
+        @keyframes waveform-bar {
+          0% { transform: scaleY(0.35); }
+          100% { transform: scaleY(1); }
+        }
+      `}</style>
       {/* ── SIDEBAR ─────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {isHistoryOpen && (
@@ -1435,7 +1711,10 @@ export default function AiHubPage() {
         </div>
 
         {/* Messages area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/20">
+        <div
+          ref={chatContainerRef}
+          className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/20"
+        >
           {!isAiReady ? (
             /* Pulsing skeleton when AI is booting */
             <div className="max-w-2xl mx-auto space-y-6 py-6 animate-pulse">
@@ -1477,13 +1756,17 @@ export default function AiHubPage() {
             </div>
           ) : messages.length === 0 ? (
             /* Welcome screen */
-            <div className="max-w-2xl mx-auto py-12 space-y-8">
-              <div className="text-center space-y-3">
-                <div className="h-11 w-11 rounded-xl bg-blue-600 flex items-center justify-center mx-auto shadow-sm">
-                  <Brain className="h-5 w-5 text-white" />
+            <div className="max-w-2xl mx-auto py-12 space-y-8 animate-fade-in">
+              <div className="text-center space-y-4">
+                {/* Glowing Logo */}
+                <div className="relative h-16 w-16 mx-auto flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-2xl bg-blue-500/20 blur-xl animate-pulse" />
+                  <div className="relative h-12 w-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 animate-fade-in">
+                    <Brain className="h-6 w-6 text-white" />
+                  </div>
                 </div>
-                <h1 className="text-lg md:text-xl font-extrabold text-slate-900 tracking-tight">
-                  Gia Sư Học Tập TCK AI
+                <h1 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">
+                  Hôm nay bạn muốn học gì?
                 </h1>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed font-semibold">
                   Hỏi đáp bài tập, giải đề thi khó, tóm tắt tài liệu học tập cùng trí tuệ nhân tạo thế hệ mới.
@@ -1499,7 +1782,11 @@ export default function AiHubPage() {
                   {(SUGGESTED_PROMPTS_BY_SUBJECT[currentSubjectMode] || SUGGESTED_PROMPTS_BY_SUBJECT.general).map((pText) => (
                     <button
                       key={pText}
-                      onClick={() => sendMessage(pText)}
+                      onClick={() => {
+                        setPrompt(pText);
+                        textareaRef.current?.focus();
+                        setTimeout(autoResize, 50);
+                      }}
                       className="bg-white border border-black/[0.05] p-4 rounded-2xl hover:border-blue-500/30 hover:shadow-xs text-left transition-all duration-200 group/suggest cursor-pointer"
                     >
                       <p className="text-xs font-bold text-slate-800 group-hover/suggest:text-blue-600 line-clamp-2 leading-relaxed">
@@ -1633,6 +1920,77 @@ export default function AiHubPage() {
               </div>
             )}
 
+            {/* Voice Recording Panel */}
+            {isRecording && (
+              <div className="bg-white/95 backdrop-blur-md border border-slate-200/60 p-4 rounded-3xl shadow-lg flex items-center justify-between gap-4 animate-fade-in select-none">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800">Đang ghi âm bằng giọng nói...</span>
+                    <span className="text-[10px] text-slate-400 font-bold">{formatDuration(recordingDuration)}</span>
+                  </div>
+                </div>
+
+                {/* Animated Waveform */}
+                <div className="flex items-center gap-0.75 h-6">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((bar) => {
+                    const delay = (bar * 0.12).toFixed(2);
+                    const height = [14, 22, 10, 18, 6, 20, 12, 16, 8, 22][bar - 1];
+                    return (
+                      <span
+                        key={bar}
+                        className="w-0.75 bg-blue-600 rounded-full animate-pulse"
+                        style={{
+                          height: `${height}px`,
+                          animation: `waveform-bar 1.2s ease-in-out infinite alternate`,
+                          animationDelay: `${delay}s`
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Language Switcher & Stop Recording Button */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200/50">
+                    <button
+                      type="button"
+                      onClick={() => toggleRecognitionLanguage("vi-VN")}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition ${
+                        recognitionLanguage === "vi-VN"
+                          ? "bg-white text-slate-850 shadow-3xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Tiếng Việt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleRecognitionLanguage("en-US")}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition ${
+                        recognitionLanguage === "en-US"
+                          ? "bg-white text-slate-850 shadow-3xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      English
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={stopRecording}
+                    className="h-7 w-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition border border-slate-200/40"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Input form */}
             <form
               onSubmit={handleSendMessage}
@@ -1748,6 +2106,22 @@ export default function AiHubPage() {
                   style={{ maxHeight: "160px" }}
                 />
 
+                {/* Microphone trigger button */}
+                {isSpeechSupported && (
+                  <button
+                    type="button"
+                    onClick={isRecording ? stopRecording : startRecording}
+                    className={`h-9 w-9 rounded-2xl flex items-center justify-center shrink-0 transition ${
+                      isRecording
+                        ? "bg-rose-500 hover:bg-rose-600 text-white animate-pulse"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200"
+                    }`}
+                    title={isRecording ? "Dừng ghi âm" : "Nhập liệu bằng giọng nói"}
+                  >
+                    {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </button>
+                )}
+
                 <Button
                   type="submit"
                   disabled={isSending || !isAiReady || (!prompt.trim() && attachedFiles.length === 0)}
@@ -1794,7 +2168,7 @@ export default function AiHubPage() {
 
       {/* ── BOOT LOADER SYSTEM OVERLAY ── */}
       <AnimatePresence>
-        {!isAiReady && (
+        {!isBooted && (
           <motion.div
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1806,7 +2180,7 @@ export default function AiHubPage() {
                 <Brain className="h-7 w-7" />
               </div>
               <h3 className="text-base font-extrabold text-slate-900">
-                Đang khởi tạo hệ thống AI...
+                {loadingText}
               </h3>
               <p className="text-xs text-slate-500 font-semibold leading-relaxed">
                 Thiết lập môi trường an toàn và đồng bộ dữ liệu cá nhân của bạn.

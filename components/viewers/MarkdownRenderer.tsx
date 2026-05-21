@@ -14,7 +14,7 @@ interface CodeBlockProps {
 // Global KaTeX loader logic
 let katexLoadingPromise: Promise<any> | null = null;
 
-function loadKatex(): Promise<any> {
+export function loadKatex(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject();
   if ((window as any).katex) return Promise.resolve((window as any).katex);
 
