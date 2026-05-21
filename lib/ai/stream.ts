@@ -1,138 +1,141 @@
-import { createAdminClient } from "@/lib/supabase/server";
-import { putKeyOnCooldown, getBalancedGenAiClient } from "@/lib/gemini/loadBalancer";
-import { autoSummarizeChat } from "@/lib/ai/summarizer";
+import { parseUltraSSEStream } from "@/lib/openrouter/ultraStream";
+import { createClient } from "@/lib/supabase/server";
+import { autoSummarizeChat } from "./summarizer";
+import { openRouterFetch } from "@/lib/openrouter/client";
+import { stabilizeResponseText } from "./stabilizer";
 
-/**
- * Dynamically generates a title for the chat thread using a fast model.
- */
-async function generateChatTitle(prompt: string): Promise<string> {
-  try {
-    const { client } = getBalancedGenAiClient();
-    const result = await client.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: [{
-        role: "user",
-        parts: [{ text: `Dựa trên tin nhắn đầu tiên của người dùng, hãy tạo tiêu đề hội thoại ngắn gọn bằng tiếng Việt. Tối đa 35 ký tự. Không dùng dấu ngoặc kép. Không markdown. Không thêm dấu chấm cuối câu. Viết tự nhiên như tiêu đề ChatGPT.\nTin nhắn đầu tiên: "${prompt.slice(0, 200)}"` }]
-      }],
-    });
-    const title = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    return title ? title.replace(/^[".]+|[".\s]+$/g, "").slice(0, 45) : prompt.slice(0, 35);
-  } catch {
-    return prompt.slice(0, 35);
-  }
-}
-
-interface StreamResponseParams {
-  stream: AsyncIterable<any>;
-  rawKey: string;
-  chatId: string;
-  prompt: string;
-  promptBody: string;
-  user: any;
-  isGuest: boolean;
-  isFirstMessage: boolean;
-  generateTitle?: boolean;
-}
-
-/**
- * Creates a stream Response which yields tokens in real time, and persists the messages
- * and triggers background auto-summarization upon completion.
- */
-export function createGeminiStreamResponse(params: StreamResponseParams): Response {
-  const {
-    stream,
-    rawKey,
-    chatId,
-    prompt,
-    promptBody,
-    user,
-    isGuest,
-    isFirstMessage,
-    generateTitle,
-  } = params;
-
+export async function createStreamResponse(
+  chatId: string,
+  prompt: string,
+  response: Response,
+  modelUsed: string,
+  userId: string,
+  isGuest: boolean
+): Promise<Response> {
   const encoder = new TextEncoder();
-  let aiText = "";
 
-  const readable = new ReadableStream({
+  const stream = new ReadableStream({
     async start(controller) {
+      let fullContent = "";
+      let fullReasoning = "";
+
       try {
-        for await (const chunk of stream) {
-          const text: string = chunk.text || "";
-          if (text) {
-            aiText += text;
-            controller.enqueue(encoder.encode(text));
+        const chunkGenerator = parseUltraSSEStream(response);
+        for await (const chunk of chunkGenerator) {
+          if (chunk.type === "content") {
+            fullContent += chunk.data;
+            controller.enqueue(encoder.encode(chunk.data));
+          } else if (chunk.type === "reasoning") {
+            fullReasoning += chunk.data;
+          } else if (chunk.type === "error") {
+            console.error("Stream error chunk:", chunk.data);
+            controller.enqueue(encoder.encode(`\n\n[Lỗi: ${chunk.data}]`));
           }
         }
       } catch (err: any) {
-        console.error("[AI Stream] Chunk generation error:", err?.message);
-        putKeyOnCooldown(rawKey);
-        const fallback = "\n\n*Hệ thống AI đang tối ưu kết nối, vui lòng thử lại sau vài giây.*";
-        controller.enqueue(encoder.encode(fallback));
+        console.error("Stream parse error:", err);
+        controller.enqueue(encoder.encode("\n\n[Kết nối bị gián đoạn. Vui lòng thử lại.]"));
+      } finally {
         controller.close();
-        return;
-      }
 
-      // Process database writes and titles BEFORE closing the stream to avoid client race conditions
-      if (!isGuest && user && aiText) {
-        try {
-          const adminSupabase = await createAdminClient();
+        // Stabilize final content before saving to Database
+        const stabilizedContent = stabilizeResponseText(fullContent);
 
-          const tasks: Promise<any>[] = [
-            adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "user", content: prompt }) as any,
-            adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "model", content: aiText }) as any,
-            adminSupabase.from("ai_chats").update({ updated_at: new Date().toISOString() }).eq("id", chatId) as any,
-          ];
+        // Background persistence
+        if (!isGuest && chatId) {
+          const supabase = await createClient();
+          
+          // Check if first message to generate title
+          const { data: existingMsgs } = await supabase
+            .from("ai_messages")
+            .select("id")
+            .eq("chat_id", chatId)
+            .limit(1);
 
-          // Auto-generate chat title on first message
-          if (isFirstMessage || generateTitle) {
-            try {
-              const title = await generateChatTitle(prompt);
-              tasks.push(
-                adminSupabase.from("ai_chats").update({ title }).eq("id", chatId) as any
-              );
-            } catch (titleErr) {
-              console.error("[AI Stream] Title generation error:", titleErr);
-            }
+          if (!existingMsgs || existingMsgs.length === 0) {
+            generateChatTitle(chatId, prompt).catch(console.error);
           }
 
-          // Log request (best effort)
-          tasks.push(
-            (async () => {
-              try {
-                await adminSupabase.from("ai_logs")
-                  .insert({ user_id: user.id, prompt: promptBody, response: aiText });
-              } catch {}
-            })()
-          );
-
-          await Promise.all(tasks);
-          console.log("[AI Stream] Chat messages and logging saved.");
-
-          // Trigger auto-summarization (background non-blocking)
-          autoSummarizeChat(chatId).catch((sumErr) => {
-            console.error("[AI Stream] Background summarization failed:", sumErr);
+          // Save User message
+          await supabase.from("ai_messages").insert({
+            chat_id: chatId,
+            role: "user",
+            content: prompt,
           });
-        } catch (dbErr) {
-          console.error("[AI Stream] DB persist error (non-fatal):", dbErr);
-        } finally {
-          controller.close();
+
+          // Save AI message (stabilized)
+          await supabase.from("ai_messages").insert({
+            chat_id: chatId,
+            role: "model",
+            content: stabilizedContent,
+          });
+
+          // Update chat timestamp
+          await supabase
+            .from("ai_chats")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", chatId);
+
+          // Log usage
+          await supabase.from("ai_logs").insert({
+            user_id: userId,
+            prompt,
+            response: stabilizedContent,
+            model: modelUsed,
+          });
+
+          // Auto summarize
+          autoSummarizeChat(chatId).catch(console.error);
         }
-      } else {
-        controller.close();
       }
-    },
-    cancel() {
-      console.log("[AI Stream] Cancelled by client.");
     },
   });
 
-  return new Response(readable, {
+  return new Response(stream, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-cache, no-store",
-      "X-Content-Type-Options": "nosniff",
-      Connection: "keep-alive",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
     },
   });
 }
+
+export async function generateChatTitle(chatId: string, prompt: string) {
+  const supabase = await createClient();
+  
+  try {
+    const response = await openRouterFetch({
+      model: "deepseek/deepseek-v4-flash:free",
+      messages: [
+        {
+          role: "system",
+          content: "Tạo một tiêu đề ngắn gọn tiếng Việt (tối đa 4-5 từ) tóm tắt nội dung câu hỏi sau. Trả về trực tiếp tiêu đề, KHÔNG dùng ngoặc kép, KHÔNG giải thích dông dài."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      stream: false,
+      max_tokens: 15
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      let title = data.choices?.[0]?.message?.content?.trim();
+      
+      if (title) {
+        title = title.replace(/^["']|["']$/g, '');
+        if (title.length > 35) title = title.slice(0, 35) + "...";
+        
+        await supabase
+          .from("ai_chats")
+          .update({ title })
+          .eq("id", chatId);
+      }
+    }
+  } catch (e) {
+    console.error("Error generating title:", e);
+  }
+}
+

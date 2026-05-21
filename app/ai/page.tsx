@@ -490,6 +490,30 @@ export default function AiHubPage() {
   const pendingQueue = useRef<string[]>([]);
   const supabase = createClient();
 
+  // Refs for stable callback state access
+  const promptRef = useRef(prompt);
+  const attachedFilesRef = useRef(attachedFiles);
+  const isAiReadyRef = useRef(isAiReady);
+  const isSendingRef = useRef(isSending);
+  const activeChatIdRef = useRef(activeChatId);
+  const isLoggedInRef = useRef(isLoggedIn);
+  const currentSubjectModeRef = useRef(currentSubjectMode);
+  const learningModeRef = useRef(learningMode);
+  const preferencesRef = useRef(preferences);
+  const requestChatIdRef = useRef<string | null>(null);
+  const scrollScheduledRef = useRef(false);
+
+  // Sync refs on every render
+  promptRef.current = prompt;
+  attachedFilesRef.current = attachedFiles;
+  isAiReadyRef.current = isAiReady;
+  isSendingRef.current = isSending;
+  activeChatIdRef.current = activeChatId;
+  isLoggedInRef.current = isLoggedIn;
+  currentSubjectModeRef.current = currentSubjectMode;
+  learningModeRef.current = learningMode;
+  preferencesRef.current = preferences;
+
   // Sync messages reference
   useEffect(() => {
     messagesRef.current = messages;
@@ -586,7 +610,7 @@ export default function AiHubPage() {
     }
 
     async function init() {
-      const minBootTime = 4000;
+      const minBootTime = 5000;
       const start = Date.now();
 
       // Loading texts rotation
@@ -717,6 +741,31 @@ export default function AiHubPage() {
 
   // ─── Speech recognition configuration ──────────────────────────────────────────
   useEffect(() => {
+    let silenceTimer: NodeJS.Timeout;
+    let consecutiveErrors = 0;
+
+    const autoPunctuate = (text: string, lang: string): string => {
+      let punctuated = text;
+      if (lang.startsWith("vi")) {
+        punctuated = punctuated
+          .replace(/\s+phẩy\b/gi, ",")
+          .replace(/\s+chấm hỏi\b/gi, "?")
+          .replace(/\s+chấm\b/gi, ".")
+          .replace(/\s+xuống dòng\b/gi, "\n")
+          .replace(/\s+chấm than\b/gi, "!");
+      } else {
+        punctuated = punctuated
+          .replace(/\s+comma\b/gi, ",")
+          .replace(/\s+period\b/gi, ".")
+          .replace(/\s+question mark\b/gi, "?")
+          .replace(/\s+exclamation mark\b/gi, "!")
+          .replace(/\s+new line\b/gi, "\n");
+      }
+      // Auto capitalize first letter after dot or new line
+      punctuated = punctuated.replace(/(?:^|[.!?]\s+)([a-z])/g, (match, char) => match.toUpperCase());
+      return punctuated;
+    };
+
     if (typeof window !== "undefined") {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
@@ -731,6 +780,7 @@ export default function AiHubPage() {
           recordingIntervalRef.current = setInterval(() => {
             setRecordingDuration((prev) => prev + 1);
           }, 1000);
+          consecutiveErrors = 0;
         };
 
         rec.onresult = (event: any) => {
@@ -741,14 +791,29 @@ export default function AiHubPage() {
             }
           }
           if (finalTrans) {
+            const punctuatedTrans = autoPunctuate(finalTrans, recognitionLanguage);
             setPrompt((prev) => {
-              const spacing = prev && !prev.endsWith(" ") ? " " : "";
-              return prev + spacing + finalTrans;
+              const spacing = prev && !prev.endsWith(" ") && !prev.endsWith("\n") ? " " : "";
+              return prev + spacing + punctuatedTrans;
             });
           }
+
+          // Reset silence timer on speech detection
+          clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => {
+            if (isRecordingRef.current) {
+              console.log("Silence detected: restarting mic to avoid freeze");
+              try {
+                rec.stop();
+              } catch (e) {
+                console.error(e);
+              }
+            }
+          }, 6000);
         };
 
         rec.onend = () => {
+          clearTimeout(silenceTimer);
           if (isRecordingRef.current) {
             try {
               recognitionRef.current.start();
@@ -765,7 +830,14 @@ export default function AiHubPage() {
           if (e.error === "no-speech") {
             return;
           }
-          toast.error("Lỗi nhận diện giọng nói: " + e.error);
+          consecutiveErrors++;
+          if (consecutiveErrors > 3) {
+            isRecordingRef.current = false;
+            setIsRecording(false);
+            clearInterval(recordingIntervalRef.current);
+            clearTimeout(silenceTimer);
+            toast.error("Gặp lỗi mic liên tục. Vui lòng kiểm tra lại thiết bị.");
+          }
         };
 
         recognitionRef.current = rec;
@@ -773,6 +845,7 @@ export default function AiHubPage() {
     }
     return () => {
       clearInterval(recordingIntervalRef.current);
+      clearTimeout(silenceTimer);
     };
   }, [recognitionLanguage]);
 
@@ -842,16 +915,23 @@ export default function AiHubPage() {
   };
 
   const scrollToBottom = useCallback((force = false) => {
-    const container = chatContainerRef.current;
-    if (!container) return;
-    if (force || isNearBottom()) {
-      window.requestAnimationFrame(() => {
+    if (scrollScheduledRef.current) return;
+    scrollScheduledRef.current = true;
+    window.requestAnimationFrame(() => {
+      scrollScheduledRef.current = false;
+      const container = chatContainerRef.current;
+      if (!container) return;
+      
+      const { scrollHeight, scrollTop, clientHeight } = container;
+      const isNear = scrollHeight - scrollTop - clientHeight < 150;
+      
+      if (force || isNear) {
         container.scrollTo({
-          top: container.scrollHeight,
+          top: scrollHeight,
           behavior: "smooth"
         });
-      });
-    }
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -860,36 +940,30 @@ export default function AiHubPage() {
 
   // ── Load messages on chat switch ────────────────────────────────────────────
   useEffect(() => {
-    if (skipLoadMessagesRef.current) {
-      // Skip aborting if we are initializing a new chat and skipping messages loading
-    } else {
+    // If we are switching to a chat that is NOT the one currently streaming
+    if (requestChatIdRef.current !== activeChatId) {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
         setIsSending(false);
       }
-    }
-
-    if (activeChatId) {
-      if (skipLoadMessagesRef.current) {
-        skipLoadMessagesRef.current = false;
-      } else {
+      if (activeChatId) {
         loadMessages(activeChatId);
+      } else {
+        setMessages([]);
       }
-    } else {
-      setMessages([]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChatId]);
 
   // ─── Data loaders ────────────────────────────────────────────────────────────
 
-  const loadChats = async () => {
+  const loadChats = useCallback(async () => {
     setIsLoadingChats(true);
     try {
       const list = await getAiChats();
       setChats(list);
-      if (list.length > 0 && !activeChatId) {
+      if (list.length > 0 && !activeChatIdRef.current) {
         setActiveChatId(list[0].id);
       }
     } catch (err) {
@@ -897,9 +971,9 @@ export default function AiHubPage() {
     } finally {
       setIsLoadingChats(false);
     }
-  };
+  }, []);
 
-  const loadMessages = async (chatId: string) => {
+  const loadMessages = useCallback(async (chatId: string) => {
     const requestId = ++currentRequestIdRef.current;
     try {
       const msgs = await getAiMessages(chatId);
@@ -914,7 +988,7 @@ export default function AiHubPage() {
       if (requestId !== currentRequestIdRef.current) return;
       toast.error("Không thể tải tin nhắn.");
     }
-  };
+  }, []);
 
   // ─── Actions ─────────────────────────────────────────────────────────────────
 
@@ -1021,22 +1095,24 @@ export default function AiHubPage() {
 
   // Message Actions Logic
   const handleSpeakToggle = useCallback((index: number, text: string) => {
-    if (speakingIndex === index) {
-      window.speechSynthesis.cancel();
-      setSpeakingIndex(null);
-    } else {
-      window.speechSynthesis.cancel();
-      const plainText = text
-        .replace(/[\*\#\`\_\[\]\(\)\$]/g, "")
-        .replace(/\$\$[\s\S]*?\$\$/g, "");
-      const utterance = new SpeechSynthesisUtterance(plainText);
-      utterance.lang = "vi-VN";
-      utterance.onend = () => setSpeakingIndex(null);
-      utterance.onerror = () => setSpeakingIndex(null);
-      window.speechSynthesis.speak(utterance);
-      setSpeakingIndex(index);
-    }
-  }, [speakingIndex]);
+    setSpeakingIndex((currentValue) => {
+      if (currentValue === index) {
+        window.speechSynthesis.cancel();
+        return null;
+      } else {
+        window.speechSynthesis.cancel();
+        const plainText = text
+          .replace(/[\*\#\`\_\[\]\(\)\$]/g, "")
+          .replace(/\$\$[\s\S]*?\$\$/g, "");
+        const utterance = new SpeechSynthesisUtterance(plainText);
+        utterance.lang = "vi-VN";
+        utterance.onend = () => setSpeakingIndex(null);
+        utterance.onerror = () => setSpeakingIndex(null);
+        window.speechSynthesis.speak(utterance);
+        return index;
+      }
+    });
+  }, []);
 
   const handleContinue = useCallback(() => {
     sendMessage("Hãy viết tiếp câu trả lời của bạn.");
@@ -1161,38 +1237,38 @@ export default function AiHubPage() {
 
   // ─── Send message ─────────────────────────────────────────────────────────────
 
-  const sendMessage = async (overridePrompt?: string) => {
-    const text = (overridePrompt ?? prompt).trim();
-    if (!text && attachedFiles.length === 0) {
+  const sendMessage = useCallback(async (overridePrompt?: string) => {
+    const text = (overridePrompt ?? promptRef.current).trim();
+    if (!text && attachedFilesRef.current.length === 0) {
       toast.warning("Vui lòng nhập nội dung câu hỏi!");
       return;
     }
 
-    if (!isAiReady) {
+    if (!isAiReadyRef.current) {
       toast.info("Hệ thống AI đang khởi động, tin nhắn đã được thêm vào hàng đợi...");
       pendingQueue.current.push(text);
       setPrompt("");
       return;
     }
 
-    if (isSending && !overridePrompt) {
+    if (isSendingRef.current && !overridePrompt) {
       toast.info("Đang nhận phản hồi, tin nhắn mới đã được thêm vào hàng đợi...");
       pendingQueue.current.push(text);
       setPrompt("");
       return;
     }
 
-    const hasParsing = attachedFiles.some((f) => f.status === "parsing");
+    const hasParsing = attachedFilesRef.current.some((f) => f.status === "parsing");
     if (hasParsing) {
       toast.warning("Hệ thống đang trích xuất nội dung tệp của bạn, vui lòng đợi trong giây lát!");
       return;
     }
 
-    let targetChatId = activeChatId;
-    if (isLoggedIn && !targetChatId) {
+    let targetChatId = activeChatIdRef.current;
+    if (isLoggedInRef.current && !targetChatId) {
       try {
         const newChat = await createAiChat(text.slice(0, 35) || "Cuộc trò chuyện mới");
-        skipLoadMessagesRef.current = true;
+        requestChatIdRef.current = newChat.id;
         setChats((prev) => [newChat, ...prev]);
         setActiveChatId(newChat.id);
         targetChatId = newChat.id;
@@ -1213,9 +1289,11 @@ export default function AiHubPage() {
       abortControllerRef.current = null;
     }
 
-    const currentChatId = isLoggedIn ? targetChatId! : "guest-session";
-    const imagesBase64 = attachedFiles.filter((f) => f.base64).map((f) => f.base64!);
-    const combinedDocsContext = attachedFiles.filter((f) => f.textContext).map((f) => f.textContext!).join("\n");
+    const currentChatId = isLoggedInRef.current ? targetChatId! : "guest-session";
+    requestChatIdRef.current = currentChatId;
+    
+    const imagesBase64 = attachedFilesRef.current.filter((f) => f.base64).map((f) => f.base64!);
+    const combinedDocsContext = attachedFilesRef.current.filter((f) => f.textContext).map((f) => f.textContext!).join("\n");
 
     setPrompt("");
     setAttachedFiles([]);
@@ -1268,9 +1346,9 @@ export default function AiHubPage() {
             prompt: text,
             imagesBase64,
             fileContext: combinedDocsContext || undefined,
-            subject: currentSubjectMode !== "general" ? currentSubjectMode : undefined,
-            mode: learningMode,
-            preferences,
+            subject: currentSubjectModeRef.current !== "general" ? currentSubjectModeRef.current : undefined,
+            mode: learningModeRef.current,
+            preferences: preferencesRef.current,
           }),
           signal: controller.signal,
         });
@@ -1352,8 +1430,10 @@ export default function AiHubPage() {
         });
 
         success = true;
-        currentRequestRef.current = null; // Clear ownership
-        if (isLoggedIn) loadChats();
+        if (currentRequestRef.current === requestId) {
+          currentRequestRef.current = null; // Clear ownership
+        }
+        if (isLoggedInRef.current) loadChats();
       } catch (err: any) {
         clearTimeout(timeoutId);
 
@@ -1365,7 +1445,9 @@ export default function AiHubPage() {
         if (err.name === "AbortError") {
           setIsSending(false);
           abortControllerRef.current = null;
-          currentRequestRef.current = null; // Clear ownership
+          if (currentRequestRef.current === requestId) {
+            currentRequestRef.current = null; // Clear ownership
+          }
           // Remove loading placeholders
           setMessages((prev) => prev.filter((m) => !m.isLoading && !m.isFallback));
           return;
@@ -1414,7 +1496,9 @@ export default function AiHubPage() {
 
           setIsSending(false);
           abortControllerRef.current = null;
-          currentRequestRef.current = null;
+          if (currentRequestRef.current === requestId) {
+            currentRequestRef.current = null;
+          }
         }
       } finally {
         if (success) {
@@ -1423,7 +1507,7 @@ export default function AiHubPage() {
         }
       }
     }
-  };
+  }, []);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();

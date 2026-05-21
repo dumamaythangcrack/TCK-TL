@@ -1,89 +1,62 @@
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export interface ContextResult {
-  contents: any[];
+  messages: any[];
   profileName?: string;
   profileBio?: string;
   summaryPrompt?: string;
 }
 
-/**
- * Fetches user profile name/bio, latest chat summary (role='system'),
- * and last 20 messages for Gemini request contents.
- */
 export async function getConversationContext(
-  chatId: string,
+  chatId: string | null,
   isGuest: boolean
 ): Promise<ContextResult> {
-  const contents: any[] = [];
-  let profileName = "";
-  let profileBio = "";
-  let summaryPrompt = "";
+  const result: ContextResult = { messages: [] };
+  const supabase = await createClient();
 
-  if (isGuest || chatId === "guest-session") {
-    return { contents };
+  if (!isGuest) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, bio")
+        .eq("id", user.id)
+        .single();
+      
+      if (profile) {
+        result.profileName = profile.full_name;
+        result.profileBio = profile.bio;
+      }
+    }
   }
 
-  try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { contents };
-    }
-
-    // 1. Fetch user profile
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("full_name, bio")
-      .eq("id", user.id)
-      .single();
-
-    if (profile) {
-      profileName = profile.full_name || "";
-      profileBio = profile.bio || "";
-    }
-
-    // 2. Fetch latest system summary
-    const { data: systemMsg } = await supabase
+  if (chatId && !isGuest) {
+    // Lấy system summary mới nhất
+    const { data: sysMsgs } = await supabase
       .from("ai_messages")
       .select("content")
       .eq("chat_id", chatId)
       .eq("role", "system")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
 
-    if (systemMsg?.content) {
-      summaryPrompt = systemMsg.content;
+    if (sysMsgs && sysMsgs.length > 0) {
+      result.summaryPrompt = sysMsgs[0].content;
     }
 
-    // 3. Fetch last 20 non-system messages in reverse order (chronological limit)
-    const { data: history } = await supabase
+    // Lấy 20 tin nhắn gần nhất không phải system
+    const { data: msgs } = await supabase
       .from("ai_messages")
-      .select("role, content")
+      .select("role, content, created_at")
       .eq("chat_id", chatId)
       .neq("role", "system")
       .order("created_at", { ascending: false })
       .limit(20);
 
-    if (history?.length) {
-      // Reverse history so it's in chronological order for Gemini contents array
-      for (const msg of history.reverse()) {
-        contents.push({
-          role: msg.role === "user" ? "user" : "model",
-          parts: [{ text: (msg.content as string).slice(0, 6000) }],
-        });
-      }
+    if (msgs) {
+      result.messages = msgs.reverse();
     }
-  } catch (err) {
-    console.error("[AI Memory] Error loading conversation context:", err);
   }
 
-  return {
-    contents,
-    profileName,
-    profileBio,
-    summaryPrompt,
-  };
+  return result;
 }
