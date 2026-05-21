@@ -236,6 +236,8 @@ interface Message {
   isStreaming?: boolean;
   isError?: boolean;
   status?: "streaming" | "sent" | "error" | "retrying";
+  isLoading?: boolean;
+  isFallback?: boolean;
 }
 
 // ─── Memoised message bubble ──────────────────────────────────────────────────
@@ -267,7 +269,7 @@ const MessageBubble = memo(function MessageBubble({
   const [showFallbackMsg, setShowFallbackMsg] = useState(false);
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (msg.isStreaming && !msg.content) {
+    if ((msg.isStreaming && !msg.content) || msg.isLoading || msg.isFallback) {
       timer = setTimeout(() => {
         setShowFallbackMsg(true);
       }, 2500);
@@ -275,7 +277,7 @@ const MessageBubble = memo(function MessageBubble({
       setShowFallbackMsg(false);
     }
     return () => clearTimeout(timer);
-  }, [msg.isStreaming, msg.content]);
+  }, [msg.isStreaming, msg.content, msg.isLoading, msg.isFallback]);
 
   return (
     <div className={`group relative flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -301,7 +303,7 @@ const MessageBubble = memo(function MessageBubble({
             <p className="whitespace-pre-wrap font-semibold text-xs leading-relaxed">
               {msg.content}
             </p>
-          ) : (msg.isStreaming && !msg.content) || msg.status === "retrying" ? (
+          ) : (msg.isStreaming && !msg.content) || msg.status === "retrying" || msg.isLoading || msg.isFallback ? (
             /* Premium shimmer loading skeleton */
             <div className="space-y-2.5 w-64 md:w-80 py-1">
               <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-3/4" />
@@ -312,7 +314,7 @@ const MessageBubble = memo(function MessageBubble({
                 <span>
                   {msg.status === "retrying"
                     ? msg.content || "Hệ thống AI đang kết nối lại..."
-                    : showFallbackMsg 
+                    : (showFallbackMsg || msg.isFallback)
                     ? "AI đang chuyển sang máy chủ dự phòng..." 
                     : "Đang khởi động kết nối AI..."}
                 </span>
@@ -474,6 +476,7 @@ export default function AiHubPage() {
 
   // Refs
   const currentRequestIdRef = useRef(0);
+  const currentRequestRef = useRef<string | null>(null);
   const skipLoadMessagesRef = useRef(false);
   const isRecordingRef = useRef(false);
   const recognitionRef = useRef<any>(null);
@@ -1037,12 +1040,26 @@ export default function AiHubPage() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setIsSending(false);
-    // Mark last streaming bubble as done
+    currentRequestRef.current = null; // Clear request ownership
     setMessages((prev) => {
       const updated = [...prev];
-      const last = updated[updated.length - 1];
-      if (last?.isStreaming) updated[updated.length - 1] = { ...last, isStreaming: false };
-      return updated;
+      const lastIdx = updated.map(m => m.role === "model" && m.isStreaming).lastIndexOf(true);
+      if (lastIdx !== -1) {
+        const last = updated[lastIdx];
+        if (!last.content.trim()) {
+          // If it was completely empty, remove it!
+          updated.splice(lastIdx, 1);
+        } else {
+          updated[lastIdx] = {
+            ...last,
+            isStreaming: false,
+            isLoading: false,
+            isFallback: false,
+            status: "sent",
+          };
+        }
+      }
+      return updated.filter((m) => !m.isLoading && !m.isFallback);
     });
     toast.info("Đã dừng tạo câu trả lời.");
   };
@@ -1164,6 +1181,9 @@ export default function AiHubPage() {
       return;
     }
 
+    const requestId = crypto.randomUUID();
+    currentRequestRef.current = requestId;
+
     // Abort any ongoing stream requests safely
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -1195,11 +1215,20 @@ export default function AiHubPage() {
     const userMsgId = crypto.randomUUID();
     const modelMsgId = crypto.randomUUID();
 
-    // Optimistic UI — add user message + empty AI streaming bubble
+    // Optimistic UI — add user message + empty AI streaming bubble with isLoading flag
+    // Also auto remove any old loading or fallback placeholders from the list
     setMessages((prev) => [
-      ...prev,
+      ...prev.filter((m) => !m.isLoading && !m.isFallback),
       { id: userMsgId, role: "user", content: text, status: "sent" },
-      { id: modelMsgId, role: "model", content: "", isStreaming: true, status: "streaming" },
+      {
+        id: modelMsgId,
+        role: "model",
+        content: "",
+        isStreaming: true,
+        status: "streaming",
+        isLoading: true,
+        isFallback: false,
+      },
     ]);
 
     let success = false;
@@ -1207,10 +1236,22 @@ export default function AiHubPage() {
     const maxAttempts = 3;
 
     while (attempt < maxAttempts && !success) {
+      if (currentRequestRef.current !== requestId) return;
+
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
+      // Hard timeout: auto abort after 45 seconds
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 45000);
+
       try {
+        if (currentRequestRef.current !== requestId) {
+          clearTimeout(timeoutId);
+          return;
+        }
+
         const response = await fetch("/api/ai/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1246,8 +1287,13 @@ export default function AiHubPage() {
           
           const now = Date.now();
           if (now - lastUpdate >= THROTTLE_MS) {
+            if (currentRequestRef.current !== requestId) {
+              clearTimeout(timeoutId);
+              return;
+            }
+
             setMessages((prev) => {
-              const updated = [...prev];
+              const updated = prev.filter((m) => m.id === modelMsgId || (!m.isLoading && !m.isFallback));
               const idx = updated.findIndex((m) => m.id === modelMsgId);
               if (idx !== -1) {
                 updated[idx] = {
@@ -1255,6 +1301,8 @@ export default function AiHubPage() {
                   content: aiText,
                   isStreaming: true,
                   status: "streaming",
+                  isLoading: false,
+                  isFallback: false,
                 };
               }
               return updated;
@@ -1263,9 +1311,13 @@ export default function AiHubPage() {
           }
         }
 
-        // Finalise — remove streaming flag
+        clearTimeout(timeoutId);
+
+        if (currentRequestRef.current !== requestId) return;
+
+        // Finalise on success - clean all loading/fallback markers
         setMessages((prev) => {
-          const updated = [...prev];
+          const updated = prev.filter((m) => m.id === modelMsgId || (!m.isLoading && !m.isFallback));
           const idx = updated.findIndex((m) => m.id === modelMsgId);
           if (idx !== -1) {
             updated[idx] = {
@@ -1273,17 +1325,30 @@ export default function AiHubPage() {
               content: aiText,
               isStreaming: false,
               status: "sent",
+              isLoading: false,
+              isFallback: false,
             };
           }
           return updated;
         });
 
         success = true;
+        currentRequestRef.current = null; // Clear ownership
         if (isLoggedIn) loadChats();
       } catch (err: any) {
+        clearTimeout(timeoutId);
+
+        if (currentRequestRef.current !== requestId) {
+          // This request was overridden by a new request. Exit silently.
+          return;
+        }
+
         if (err.name === "AbortError") {
           setIsSending(false);
           abortControllerRef.current = null;
+          currentRequestRef.current = null; // Clear ownership
+          // Remove loading placeholders
+          setMessages((prev) => prev.filter((m) => !m.isLoading && !m.isFallback));
           return;
         }
 
@@ -1291,7 +1356,7 @@ export default function AiHubPage() {
         if (attempt < maxAttempts) {
           const delay = 2000 * Math.pow(2, attempt - 1);
           setMessages((prev) => {
-            const updated = [...prev];
+            const updated = prev.filter((m) => m.id === modelMsgId || (!m.isLoading && !m.isFallback));
             const idx = updated.findIndex((m) => m.id === modelMsgId);
             if (idx !== -1) {
               updated[idx] = {
@@ -1299,18 +1364,20 @@ export default function AiHubPage() {
                 content: `⚠️ Đang thử kết nối lại... (Lần ${attempt}/${maxAttempts} - Chờ ${delay / 1000}s)`,
                 status: "retrying",
                 isStreaming: true,
+                isLoading: false,
+                isFallback: true, // Mark it as fallback
               };
             }
             return updated;
           });
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
-          // Out of attempts
+          // Out of attempts - CLEANUP ON FAILURE
           const errorMessage = err.message || "Không thể gửi. Vui lòng thử lại.";
           toast.error(errorMessage);
 
           setMessages((prev) => {
-            const updated = [...prev];
+            const updated = prev.filter((m) => m.id === modelMsgId || (!m.isLoading && !m.isFallback));
             const idx = updated.findIndex((m) => m.id === modelMsgId);
             if (idx !== -1) {
               updated[idx] = {
@@ -1319,10 +1386,16 @@ export default function AiHubPage() {
                 isError: true,
                 isStreaming: false,
                 status: "error",
+                isLoading: false,
+                isFallback: false,
               };
             }
             return updated;
           });
+
+          setIsSending(false);
+          abortControllerRef.current = null;
+          currentRequestRef.current = null;
         }
       } finally {
         if (success) {
