@@ -97,6 +97,20 @@ const MessageBubble = memo(function MessageBubble({
   const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null);
   const isSpeaking = speakingIndex === index;
 
+  // Fallback status indicator for latency/retries
+  const [showFallbackMsg, setShowFallbackMsg] = useState(false);
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (msg.isStreaming && !msg.content) {
+      timer = setTimeout(() => {
+        setShowFallbackMsg(true);
+      }, 2500);
+    } else {
+      setShowFallbackMsg(false);
+    }
+    return () => clearTimeout(timer);
+  }, [msg.isStreaming, msg.content]);
+
   return (
     <div className={`group relative flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
       {/* AI avatar */}
@@ -127,11 +141,30 @@ const MessageBubble = memo(function MessageBubble({
               <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-3/4" />
               <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-full" />
               <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-5/6" />
+              <p className="text-[10px] text-slate-400 font-bold mt-2 animate-pulse flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
+                <span>
+                  {showFallbackMsg 
+                    ? "AI đang chuyển sang máy chủ dự phòng..." 
+                    : "Đang khởi động kết nối AI..."}
+                </span>
+              </p>
             </div>
           ) : (
             <div className={isLast && msg.isStreaming ? "streaming-cursor" : ""}>
               <MarkdownRenderer content={msg.content} />
             </div>
+          )}
+
+          {/* Quick retry button inside error bubble */}
+          {msg.isError && (
+            <button
+              onClick={onRegenerate}
+              className="mt-3 bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 font-extrabold text-[10px] py-1.5 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-3xs transition"
+            >
+              <RotateCw className="h-3 w-3" />
+              <span>Gửi lại câu hỏi</span>
+            </button>
           )}
         </div>
 
@@ -246,15 +279,49 @@ export default function AiHubPage() {
 
   // Sidebar V2 States
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [pinnedChatIds, setPinnedChatIds] = useState<string[]>([]);
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
 
+  // Performance and queue management states
+  const [isAiReady, setIsAiReady] = useState(false);
+  const [aiHealth, setAiHealth] = useState<{ status: string; message: string }>({
+    status: "online",
+    message: "Hệ thống AI hoạt động ổn định",
+  });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const messagesRef = useRef<Message[]>([]);
+  const pendingQueue = useRef<string[]>([]);
   const supabase = createClient();
+
+  // Sync messages reference
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Process pending messages queue when AI becomes ready and is not sending
+  useEffect(() => {
+    if (isAiReady && !isSending && pendingQueue.current.length > 0) {
+      const nextPrompt = pendingQueue.current.shift();
+      if (nextPrompt !== undefined) {
+        sendMessage(nextPrompt);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAiReady, isSending]);
 
   // ── Auto-resize textarea ────────────────────────────────────────────────────
   const autoResize = useCallback(() => {
@@ -278,6 +345,19 @@ export default function AiHubPage() {
     };
   }, []);
 
+  // Fetch health status
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch("/api/ai/health");
+      if (res.ok) {
+        const data = await res.json();
+        setAiHealth({ status: data.status, message: data.message });
+      }
+    } catch (e) {
+      console.error("fetchHealth:", e);
+    }
+  };
+
   // ── Auth init ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -297,6 +377,13 @@ export default function AiHubPage() {
     }
 
     async function init() {
+      const startTime = Date.now();
+      try {
+        await fetchHealth();
+      } catch (e) {
+        console.error("fetchHealth on init error:", e);
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       setIsLoggedIn(!!session);
       if (session) {
@@ -307,6 +394,13 @@ export default function AiHubPage() {
       }
       const subs = await getSubjects();
       setSubjects(subs);
+
+      // Ensure boot loader overlay stays for at least 2 seconds
+      const elapsed = Date.now() - startTime;
+      const delay = Math.max(0, 2000 - elapsed);
+      setTimeout(() => {
+        setIsAiReady(true);
+      }, delay);
     }
     init();
 
@@ -326,12 +420,26 @@ export default function AiHubPage() {
   }, []);
 
   // ── Scroll to bottom ────────────────────────────────────────────────────────
+  const scrollToBottom = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      });
+    }
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
   // ── Load messages on chat switch ────────────────────────────────────────────
   useEffect(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsSending(false);
+    }
+
     if (activeChatId) {
       loadMessages(activeChatId);
     } else {
@@ -431,7 +539,7 @@ export default function AiHubPage() {
 
   const getGroupedChats = () => {
     const filtered = chats.filter((c) =>
-      c.title.toLowerCase().includes(searchQuery.toLowerCase())
+      c.title.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
     );
 
     const pinned = filtered.filter((c) => pinnedChatIds.includes(c.id));
@@ -558,6 +666,26 @@ export default function AiHubPage() {
       return;
     }
 
+    if (!isAiReady) {
+      toast.info("Hệ thống AI đang khởi động, tin nhắn đã được thêm vào hàng đợi...");
+      pendingQueue.current.push(text);
+      setPrompt("");
+      return;
+    }
+
+    if (isSending && !overridePrompt) {
+      toast.info("Đang nhận phản hồi, tin nhắn mới đã được thêm vào hàng đợi...");
+      pendingQueue.current.push(text);
+      setPrompt("");
+      return;
+    }
+
+    // Abort any ongoing stream requests safely
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     let targetChatId = activeChatId;
     if (isLoggedIn && !targetChatId) {
       try {
@@ -680,7 +808,7 @@ export default function AiHubPage() {
 
   const handleRegenerate = useCallback(() => {
     // Find last user message and resend
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const lastUser = [...messagesRef.current].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
     // Remove last AI message
     setMessages((prev) => {
@@ -690,7 +818,7 @@ export default function AiHubPage() {
     });
     sendMessage(lastUser.content);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages]);
+  }, []);
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -784,10 +912,15 @@ export default function AiHubPage() {
                       Đăng nhập ngay
                     </button>
                   </div>
-                ) : isLoadingChats ? (
-                  <div className="space-y-2 p-2">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-9 rounded-xl bg-slate-100 animate-pulse" />
+                ) : (isLoadingChats || !isAiReady) ? (
+                  <div className="space-y-2 p-2 animate-pulse">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div key={i} className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-transparent">
+                        <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                          <div className="h-4 w-4 bg-slate-200/70 rounded-md shrink-0" />
+                          <div className="h-3 bg-slate-200/70 rounded-md w-2/3" />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ) : chats.length === 0 ? (
@@ -953,9 +1086,38 @@ export default function AiHubPage() {
                 <History className="h-4 w-4" />
               </button>
             )}
-            <div className="flex items-center gap-2">
-              <Brain className="h-4.5 w-4.5 text-blue-600" />
-              <span className="font-extrabold text-xs text-slate-900 tracking-tight">Gia Sư TCK AI</span>
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4.5 w-4.5 text-blue-600" />
+                <span className="font-extrabold text-xs text-slate-900 tracking-tight">Gia Sư TCK AI</span>
+              </div>
+              <div
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-bold select-none transition ${
+                  aiHealth.status === "online"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-250/50"
+                    : aiHealth.status === "high_traffic"
+                    ? "bg-amber-50 text-amber-700 border-amber-250/50"
+                    : "bg-rose-50 text-rose-700 border-rose-250/50"
+                }`}
+                title={aiHealth.message}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    aiHealth.status === "online"
+                      ? "bg-emerald-500 animate-pulse"
+                      : aiHealth.status === "high_traffic"
+                      ? "bg-amber-500"
+                      : "bg-rose-500 animate-ping"
+                  }`}
+                />
+                <span className="hidden sm:inline">
+                  {aiHealth.status === "online"
+                    ? "Hoạt động ổn định"
+                    : aiHealth.status === "high_traffic"
+                    ? "Lưu lượng truy cập cao"
+                    : "Quá tải tạm thời"}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -981,7 +1143,46 @@ export default function AiHubPage() {
 
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/20">
-          {messages.length === 0 ? (
+          {!isAiReady ? (
+            /* Pulsing skeleton when AI is booting */
+            <div className="max-w-2xl mx-auto space-y-6 py-6 animate-pulse">
+              {/* User skeleton bubble */}
+              <div className="flex gap-3 justify-end">
+                <div className="flex flex-col gap-1.5 max-w-[85%] items-end">
+                  <div className="h-10 bg-slate-200 rounded-2xl w-48" />
+                </div>
+                <div className="h-8 w-8 rounded-xl bg-slate-200 shrink-0 mt-0.5" />
+              </div>
+              {/* Model skeleton bubble */}
+              <div className="flex gap-3 justify-start">
+                <div className="h-8 w-8 rounded-xl bg-slate-200 shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-1.5 max-w-[85%] w-full">
+                  <div className="p-4 md:p-5 rounded-2xl border border-slate-100 bg-white space-y-2.5">
+                    <div className="h-3.5 bg-slate-200 rounded-lg w-3/4" />
+                    <div className="h-3.5 bg-slate-200 rounded-lg w-full" />
+                    <div className="h-3.5 bg-slate-200 rounded-lg w-5/6" />
+                  </div>
+                </div>
+              </div>
+              {/* Another user bubble */}
+              <div className="flex gap-3 justify-end">
+                <div className="flex flex-col gap-1.5 max-w-[85%] items-end">
+                  <div className="h-10 bg-slate-200 rounded-2xl w-64" />
+                </div>
+                <div className="h-8 w-8 rounded-xl bg-slate-200 shrink-0 mt-0.5" />
+              </div>
+              {/* Another model bubble */}
+              <div className="flex gap-3 justify-start">
+                <div className="h-8 w-8 rounded-xl bg-slate-200 shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-1.5 max-w-[85%] w-full">
+                  <div className="p-4 md:p-5 rounded-2xl border border-slate-100 bg-white space-y-2.5">
+                    <div className="h-3.5 bg-slate-200 rounded-lg w-2/3" />
+                    <div className="h-3.5 bg-slate-200 rounded-lg w-4/5" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : messages.length === 0 ? (
             /* Welcome screen */
             <div className="max-w-2xl mx-auto py-12 space-y-8">
               <div className="text-center space-y-3">
@@ -1120,7 +1321,9 @@ export default function AiHubPage() {
             {/* Input form */}
             <form
               onSubmit={handleSendMessage}
-              className="bg-white border border-black/[0.05] rounded-3xl shadow-sm focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100 transition-all duration-300 overflow-hidden"
+              className={`bg-white border border-black/[0.05] rounded-3xl shadow-sm focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100 transition-all duration-300 overflow-hidden ${
+                !isAiReady ? "animate-pulse border-slate-100" : ""
+              }`}
             >
               {/* Toolbar row */}
               {messages.length > 0 && (
@@ -1151,13 +1354,14 @@ export default function AiHubPage() {
 
               {/* Text + actions row */}
               <div className="flex items-end gap-2 p-2 px-3">
-                <label className="h-9 w-9 rounded-2xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center cursor-pointer transition text-slate-500 border border-slate-200 shrink-0">
+                <label className={`h-9 w-9 rounded-2xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center cursor-pointer transition text-slate-500 border border-slate-200 shrink-0 ${!isAiReady ? "opacity-55 pointer-events-none cursor-not-allowed" : ""}`}>
                   <Paperclip className="h-4 w-4" />
                   <input
                     type="file"
                     accept="image/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     multiple
                     onChange={handleFileUpload}
+                    disabled={!isAiReady}
                     className="hidden"
                   />
                 </label>
@@ -1168,16 +1372,16 @@ export default function AiHubPage() {
                   value={prompt}
                   onChange={(e) => { setPrompt(e.target.value); autoResize(); }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Gửi câu hỏi của bạn... (Enter để gửi, Shift+Enter để xuống dòng)"
+                  placeholder={!isAiReady ? "Đang kết nối với hệ thống AI..." : "Gửi câu hỏi của bạn... (Enter để gửi, Shift+Enter để xuống dòng)"}
                   rows={1}
-                  disabled={isSending}
+                  disabled={isSending || !isAiReady}
                   className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-sm md:text-xs py-2 placeholder-slate-400 text-slate-900 focus:outline-none font-semibold resize-none overflow-hidden leading-relaxed"
                   style={{ maxHeight: "160px" }}
                 />
 
                 <Button
                   type="submit"
-                  disabled={isSending || (!prompt.trim() && attachedFiles.length === 0)}
+                  disabled={isSending || !isAiReady || (!prompt.trim() && attachedFiles.length === 0)}
                   className="h-9 w-9 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shrink-0 p-0 shadow-2xs transition"
                 >
                   <Send className="h-3.5 w-3.5" />
@@ -1218,6 +1422,36 @@ export default function AiHubPage() {
 
       {/* Auth modal */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} initialTab={authTab} />
+
+      {/* ── BOOT LOADER SYSTEM OVERLAY ── */}
+      <AnimatePresence>
+        {!isAiReady && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-xl pointer-events-auto"
+          >
+            <div className="bg-white/80 backdrop-blur-md border border-white/20 p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 max-w-sm text-center">
+              <div className="h-14 w-14 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 animate-pulse">
+                <Brain className="h-7 w-7" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900">
+                Đang khởi tạo hệ thống AI...
+              </h3>
+              <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                Thiết lập môi trường an toàn và đồng bộ dữ liệu cá nhân của bạn.
+              </p>
+              <div className="flex items-center gap-1.5 mt-2 bg-slate-100/80 px-3 py-1.5 rounded-xl border border-slate-200/40">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  {aiHealth.status === "online" ? "Kết nối ổn định" : "Lượng truy cập cao"}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
