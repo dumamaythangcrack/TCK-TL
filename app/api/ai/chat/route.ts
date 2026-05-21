@@ -1,17 +1,42 @@
 import { NextRequest } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { getBalancedGenAiClient, putKeyOnCooldown } from "@/lib/gemini/loadBalancer";
+import { getBalancedGenAiClient, putKeyOnCooldown, markKeySuccess } from "@/lib/gemini/loadBalancer";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+function jsonError(message: string, status = 500) {
+  return Response.json({ success: false, error: message }, { status });
+}
+
+function friendlyError(err: any): string {
+  const msg = err?.message || "";
+  if (msg.includes("503") || msg.includes("UNAVAILABLE") || msg.includes("overloaded") || msg.includes("demand")) {
+    return "Hệ thống AI đang quá tải. Vui lòng thử lại sau vài giây.";
+  }
+  if (msg.includes("429") || msg.includes("RATE_LIMIT") || msg.includes("quota")) {
+    return "Đã vượt giới hạn sử dụng tạm thời. Hệ thống đang chuyển sang API dự phòng.";
+  }
+  if (msg.includes("400") || msg.includes("INVALID")) {
+    return "Nội dung câu hỏi không hợp lệ. Vui lòng thử lại.";
+  }
+  return "Không thể kết nối AI lúc này. Vui lòng thử lại sau.";
+}
+
+// ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
-    const { chatId, prompt, imagesBase64, fileContext, subject, mode } = await req.json();
+    const body = await req.json();
+    const { chatId, prompt, imagesBase64, fileContext, subject, mode } = body;
 
     if (!prompt && (!imagesBase64 || imagesBase64.length === 0)) {
-      return Response.json({ success: false, error: "Nội dung câu hỏi trống." }, { status: 400 });
+      return jsonError("Nội dung câu hỏi trống.", 400);
     }
 
+    // ── Auth ────────────────────────────────────────────────────────────────
     const isGuest = chatId === "guest-session";
     let user: any = null;
     let supabase: any = null;
@@ -20,95 +45,72 @@ export async function POST(req: NextRequest) {
       supabase = await createClient();
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
-        return Response.json({ success: false, error: "Unauthorized. Vui lòng đăng nhập." }, { status: 401 });
+        return jsonError("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.", 401);
       }
       user = authUser;
     }
 
-    // 1. Fetch historical messages
-    let history: any[] = [];
+    // ── Build conversation history ──────────────────────────────────────────
+    const contents: any[] = [];
+
     if (!isGuest && supabase) {
-      const { data: fetchedHistory, error: historyError } = await supabase
+      const { data: history } = await supabase
         .from("ai_messages")
         .select("role, content")
         .eq("chat_id", chatId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: true })
+        .limit(40); // cap at 40 messages to avoid token overflow
 
-      if (historyError) {
-        console.error("[Streaming API] History fetch error:", historyError);
-      } else {
-        history = fetchedHistory || [];
+      if (history?.length) {
+        for (const msg of history) {
+          contents.push({
+            role: msg.role === "user" ? "user" : "model",
+            parts: [{ text: msg.content }],
+          });
+        }
       }
     }
 
-    // 2. Build conversational contents for Gemini API
-    const contents: any[] = [];
-
-    // Add chat history
-    if (history && history.length > 0) {
-      for (const msg of history) {
-        contents.push({
-          role: msg.role === "user" ? "user" : "model",
-          parts: [{ text: msg.content }],
-        });
-      }
-    }
-
-    // Prepare current user prompt parts
-    let promptBody = prompt;
-
-    if (subject) {
-      promptBody = `[Môn học: ${subject}] ${promptBody}`;
-    }
-
+    // ── Build current user turn ─────────────────────────────────────────────
+    let promptBody = prompt || "";
+    if (subject) promptBody = `[Môn học: ${subject}] ${promptBody}`;
     if (fileContext) {
       promptBody = `[Tài liệu đính kèm]:\n"""\n${fileContext}\n"""\n\n[Yêu cầu]: ${promptBody}`;
     }
 
     const currentParts: any[] = [{ text: promptBody }];
-
-    // Append base64 images if present
-    if (imagesBase64 && imagesBase64.length > 0) {
-      for (const base64 of imagesBase64) {
-        const base64Data = base64.includes(",") ? base64.split(",")[1] : base64;
-        const mimeType = base64.includes("jpeg") || base64.includes("jpg") ? "image/jpeg" : "image/png";
-        currentParts.push({
-          inlineData: {
-            data: base64Data,
-            mimeType,
-          },
-        });
+    if (imagesBase64?.length) {
+      for (const b64 of imagesBase64) {
+        const data = b64.includes(",") ? b64.split(",")[1] : b64;
+        const mimeType =
+          b64.includes("jpeg") || b64.includes("jpg") ? "image/jpeg" : "image/png";
+        currentParts.push({ inlineData: { data, mimeType } });
       }
     }
+    contents.push({ role: "user", parts: currentParts });
 
-    contents.push({
-      role: "user",
-      parts: currentParts,
-    });
+    // ── System instruction ──────────────────────────────────────────────────
+    let systemInstruction = `Bạn là Gia Sư Học Tập Cao Cấp của nền tảng TCK Tài Liệu.
+Mục tiêu: đồng hành, giải thích và hỗ trợ học sinh Việt Nam học tốt nhất các môn học từ Lớp 1 đến Lớp 12 & Đại Học.
 
-    // 3. System Instruction
-    let systemInstruction = `Bạn là một Giáo Viên Học Tập Cao Cấp của nền tảng TCK Tài Liệu.
-Mục tiêu của bạn là đồng hành, giải thích và hỗ trợ học sinh Việt Nam học tốt nhất các môn học Toán, Lý, Hóa, Sinh, Văn, Anh từ Lớp 1 đến Lớp 12 & Đại Học.
-
-Quy tắc giảng dạy:
-1. **Rõ ràng & Có cấu trúc**: Luôn trình bày câu trả lời bằng Markdown có tiêu đề, gạch đầu dòng rõ ràng.
-2. **Giải thích từng bước (Step-by-step)**: Không bao giờ chỉ đưa ra đáp án cuối cùng. Phân tích đề bài, chỉ ra phương pháp giải, giải chi tiết từng bước, thay số vào công thức (nếu có), và rút ra bài học.
-3. **Thân thiện & Tận tâm**: Sử dụng tông giọng truyền cảm hứng, khuyến khích học sinh.
-4. **Môn học chuyên biệt**:
-   - **Toán/Lý/Hóa/Sinh**: Ghi rõ các định lý, công thức sử dụng bằng ký hiệu LaTeX đẹp. Giải thích cặn kẽ hiện tượng.
-   - **Văn học**: Phân tích sâu sắc luận điểm luận cứ, viết đoạn văn/bài văn mẫu mạch lạc, chuẩn mực.
-   - **Tiếng Anh**: Dịch nghĩa rõ ràng, phân tích cấu trúc ngữ pháp và từ vựng mới kèm ví dụ.
-5. **Đọc tài liệu**: Nếu có tài liệu đính kèm, hãy phân tích dựa trên ngữ cảnh tài liệu đó một cách trung thực nhất.`;
+Quy tắc:
+1. **Rõ ràng & Có cấu trúc**: Dùng Markdown có tiêu đề và gạch đầu dòng.
+2. **Giải thích từng bước**: Không bao giờ chỉ đưa đáp án. Phân tích đề, chỉ phương pháp, giải chi tiết.
+3. **Thân thiện & Truyền cảm hứng**: Khuyến khích học sinh.
+4. **Toán/Lý/Hóa/Sinh**: Dùng LaTeX cho công thức. Giải thích hiện tượng cặn kẽ.
+5. **Văn học**: Phân tích sâu luận điểm, viết đoạn văn mẫu mạch lạc.
+6. **Tiếng Anh**: Dịch rõ ràng, phân tích ngữ pháp, kèm ví dụ.
+7. **Tài liệu đính kèm**: Phân tích trung thực dựa trên ngữ cảnh tài liệu.`;
 
     if (mode === "summarize") {
-      systemInstruction += "\n\n[Chế độ: Tóm tắt tài liệu]: Tập trung tóm tắt các luận điểm chính, cấu trúc tài liệu, thuật ngữ quan trọng và rút ra kết luận ngắn gọn, súc tích nhất.";
+      systemInstruction += "\n\n[Chế độ: Tóm tắt] Tập trung tóm tắt luận điểm chính, cấu trúc, thuật ngữ và kết luận ngắn gọn.";
     } else if (mode === "quiz") {
-      systemInstruction += "\n\n[Chế độ: Tạo câu hỏi trắc nghiệm]: Hãy tạo từ 5 đến 10 câu hỏi trắc nghiệm kèm 4 lựa chọn (A, B, C, D) dựa trên nội dung được cung cấp hoặc chủ đề yêu cầu. Có đáp án giải thích chi tiết ở cuối.";
+      systemInstruction += "\n\n[Chế độ: Trắc nghiệm] Tạo 5–10 câu trắc nghiệm 4 lựa chọn (A/B/C/D) kèm đáp án giải thích.";
     } else if (mode === "notes") {
-      systemInstruction += "\n\n[Chế độ: Tạo ghi chú]: Hãy biến tài liệu học tập hoặc chủ đề này thành một trang ghi chú học tập (Cheat sheet / Study Guide) cực kỳ khoa học, dễ ghi nhớ.";
+      systemInstruction += "\n\n[Chế độ: Ghi chú] Biến tài liệu thành cheat sheet học tập khoa học, dễ ghi nhớ.";
     }
 
-    // 4. Fetch user profile for Memory System
+    // Personalise from profile
     if (!isGuest && user && supabase) {
       const { data: profile } = await supabase
         .from("profiles")
@@ -117,125 +119,105 @@ Quy tắc giảng dạy:
         .single();
 
       if (profile) {
-        systemInstruction += `\n\n[Thông tin học sinh]:
-- Họ và tên: ${profile.full_name || "Chưa cung cấp"}
-- Lớp học/Giới thiệu: ${profile.bio || "Chưa cung cấp"}
-Hãy nhớ thông tin này để xưng hô thân mật với người dùng và cá nhân hóa phong cách giảng dạy phù hợp với thông tin lớp học/mục tiêu của họ.`;
+        systemInstruction += `\n\n[Học sinh]: ${profile.full_name || "Bạn"} — ${profile.bio || "Học sinh TCK"}. Xưng hô thân mật và cá nhân hóa phong cách giảng dạy.`;
       }
     }
 
-    // 5. Get balanced Gemini client with retry
-    let clientInfo: any = null;
+    // ── Gemini call with retry & failover ───────────────────────────────────
     let responseStream: any = null;
-    let attempts = 0;
-    const maxAttempts = 3;
-    let lastError: any = null;
+    let chosenKey = "";
+    const maxAttempts = Math.min(3, 10); // try up to 3 different keys
 
-    while (attempts < maxAttempts) {
-      attempts++;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      let clientInfo: any;
       try {
         clientInfo = getBalancedGenAiClient();
+        chosenKey = clientInfo.rawKey;
       } catch (err: any) {
-        return Response.json({ success: false, error: err.message || "Không có API key khả dụng." }, { status: 500 });
+        return jsonError(err.message || "Không có API key khả dụng.", 503);
       }
 
+      const t0 = Date.now();
       try {
-        console.log(`[Stream API] Attempt ${attempts}/${maxAttempts} using: ${clientInfo.keyName}`);
+        console.log(`[AI Route] Attempt ${attempt}/${maxAttempts} → key#${clientInfo.keyIndex}`);
         responseStream = await clientInfo.client.models.generateContentStream({
           model: "gemini-2.5-flash",
-          contents: contents,
-          config: {
-            systemInstruction,
-          },
+          contents,
+          config: { systemInstruction },
         });
-        break; // Success!
+        markKeySuccess(clientInfo.rawKey, Date.now() - t0);
+        chosenKey = clientInfo.rawKey;
+        break; // success
       } catch (err: any) {
-        console.error(`[Stream API] Error on key ${clientInfo.keyName}:`, err);
-        lastError = err;
+        console.error(`[AI Route] key#${clientInfo.keyIndex} error:`, err?.message);
         putKeyOnCooldown(clientInfo.rawKey);
-
-        if (attempts < maxAttempts) {
-          console.log(`[Stream API] Retrying with another key...`);
-          continue;
+        if (attempt === maxAttempts) {
+          return jsonError(friendlyError(err), 503);
         }
+        // try next key
       }
     }
 
     if (!responseStream) {
-      const isOverloaded = lastError?.message?.includes("503") || lastError?.message?.includes("demand") || lastError?.status === "UNAVAILABLE";
-      const errorMsg = isOverloaded
-        ? "Mô hình AI hiện đang quá tải do nhu cầu sử dụng cao. Vui lòng thử lại sau ít phút!"
-        : "Không thể kết nối với dịch vụ Gemini AI lúc này. Vui lòng thử lại.";
-      return Response.json({ success: false, error: errorMsg }, { status: 503 });
+      return jsonError("Không thể kết nối AI lúc này. Vui lòng thử lại.", 503);
     }
 
-    // 6. Create ReadableStream to send text chunks to frontend
+    // ── Stream response to client ───────────────────────────────────────────
     const encoder = new TextEncoder();
-    const customStream = new ReadableStream({
+    let aiText = "";
+
+    const readable = new ReadableStream({
       async start(controller) {
         try {
-          let aiText = "";
           for await (const chunk of responseStream) {
-            const text = chunk.text || "";
-            aiText += text;
-            controller.enqueue(encoder.encode(text));
+            const text: string = chunk.text || "";
+            if (text) {
+              aiText += text;
+              controller.enqueue(encoder.encode(text));
+            }
           }
           controller.close();
+        } catch (err: any) {
+          console.error("[AI Route] Stream error:", err?.message);
+          putKeyOnCooldown(chosenKey);
+          // Send a graceful error message in the stream instead of crashing
+          const errorMsg = "\n\n⚠️ *AI đang bận, vui lòng thử lại sau vài giây.*";
+          controller.enqueue(encoder.encode(errorMsg));
+          controller.close();
+          return;
+        }
 
-          // 7. Save conversation to Database in background
-          if (!isGuest && user) {
+        // ── Persist to database in background ────────────────────────────
+        if (!isGuest && user) {
+          try {
             const adminSupabase = await createAdminClient();
-
-            // Save User message
-            await adminSupabase.from("ai_messages").insert({
-              chat_id: chatId,
-              role: "user",
-              content: prompt,
-            });
-
-            // Save AI response message
-            await adminSupabase.from("ai_messages").insert({
-              chat_id: chatId,
-              role: "model",
-              content: aiText,
-            });
-
-            // Update chat thread timestamp
-            await adminSupabase
-              .from("ai_chats")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", chatId);
-
-            // Log general usage for analytics
-            await adminSupabase.from("ai_logs").insert({
-              user_id: user.id,
-              prompt: promptBody,
-              response: aiText,
-            });
+            await Promise.all([
+              adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "user", content: prompt }),
+              adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "model", content: aiText }),
+              adminSupabase.from("ai_chats").update({ updated_at: new Date().toISOString() }).eq("id", chatId),
+              adminSupabase.from("ai_logs").insert({ user_id: user.id, prompt: promptBody, response: aiText }),
+            ]);
+          } catch (dbErr) {
+            console.error("[AI Route] DB persist error:", dbErr);
+            // Non-fatal — don't crash the response
           }
-        } catch (err) {
-          console.error("[Stream API] Error during chunk rendering:", err);
-          if (clientInfo && clientInfo.rawKey) {
-            putKeyOnCooldown(clientInfo.rawKey);
-          }
-          controller.error(err);
         }
       },
-      cancel(reason) {
-        console.log("[Stream API] Connection aborted/canceled by user:", reason);
-      }
-    });
-
-    return new Response(customStream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+      cancel() {
+        console.log("[AI Route] Stream cancelled by client.");
       },
     });
 
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache, no-store",
+        "X-Content-Type-Options": "nosniff",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error: any) {
-    console.error("[Stream API POST Error]:", error);
-    return Response.json({ success: false, error: error.message || "Internal server error." }, { status: 500 });
+    console.error("[AI Route] Unhandled error:", error);
+    return jsonError(error.message || "Lỗi máy chủ nội bộ.", 500);
   }
 }
