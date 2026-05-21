@@ -644,20 +644,23 @@ export default function AiHubPage() {
         }
       };
 
-      await Promise.all([
-        preloadChats(),
-        preloadSubjects(),
-        preloadKatex(),
-      ]);
-
-      clearInterval(textInterval);
-
-      const elapsed = Date.now() - start;
-      if (elapsed < minBootTime) {
-        await new Promise((resolve) => setTimeout(resolve, minBootTime - elapsed));
+      try {
+        await Promise.all([
+          preloadChats(),
+          preloadSubjects(),
+          preloadKatex(),
+        ]);
+      } catch (e) {
+        console.error("Boot preloads failed:", e);
+      } finally {
+        clearInterval(textInterval);
+        const elapsed = Date.now() - start;
+        if (elapsed < minBootTime) {
+          await new Promise((resolve) => setTimeout(resolve, minBootTime - elapsed));
+        }
+        setIsAiReady(true);
+        setIsBooted(true);
       }
-      setIsAiReady(true);
-      setIsBooted(true);
     }
     init();
 
@@ -857,10 +860,14 @@ export default function AiHubPage() {
 
   // ── Load messages on chat switch ────────────────────────────────────────────
   useEffect(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-      setIsSending(false);
+    if (skipLoadMessagesRef.current) {
+      // Skip aborting if we are initializing a new chat and skipping messages loading
+    } else {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+        setIsSending(false);
+      }
     }
 
     if (activeChatId) {
@@ -1181,15 +1188,6 @@ export default function AiHubPage() {
       return;
     }
 
-    const requestId = crypto.randomUUID();
-    currentRequestRef.current = requestId;
-
-    // Abort any ongoing stream requests safely
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
     let targetChatId = activeChatId;
     if (isLoggedIn && !targetChatId) {
       try {
@@ -1202,6 +1200,17 @@ export default function AiHubPage() {
         toast.error("Không thể tạo phòng trò chuyện.");
         return;
       }
+    }
+
+    const requestId = crypto.randomUUID();
+    currentRequestRef.current = requestId;
+    console.log("STREAM START");
+    console.log("REQUEST ID", requestId);
+
+    // Abort any ongoing stream requests safely
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
 
     const currentChatId = isLoggedIn ? targetChatId! : "guest-session";
@@ -1236,8 +1245,6 @@ export default function AiHubPage() {
     const maxAttempts = 3;
 
     while (attempt < maxAttempts && !success) {
-      if (currentRequestRef.current !== requestId) return;
-
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
@@ -1249,6 +1256,7 @@ export default function AiHubPage() {
       try {
         if (currentRequestRef.current !== requestId) {
           clearTimeout(timeoutId);
+          controller.abort();
           return;
         }
 
@@ -1281,9 +1289,18 @@ export default function AiHubPage() {
         const THROTTLE_MS = 60;
 
         while (true) {
+          if (currentRequestRef.current !== requestId) {
+            console.log("Request ID mismatch in read loop, aborting stream. Request:", requestId);
+            controller.abort();
+            clearTimeout(timeoutId);
+            return;
+          }
+
           const { done, value } = await reader.read();
           if (done) break;
-          aiText += decoder.decode(value, { stream: true });
+          const chunkText = decoder.decode(value, { stream: true });
+          aiText += chunkText;
+          console.log("STREAM CHUNK", chunkText.slice(0, 20));
           
           const now = Date.now();
           if (now - lastUpdate >= THROTTLE_MS) {
@@ -1314,6 +1331,8 @@ export default function AiHubPage() {
         clearTimeout(timeoutId);
 
         if (currentRequestRef.current !== requestId) return;
+
+        console.log("STREAM COMPLETE");
 
         // Finalise on success - clean all loading/fallback markers
         setMessages((prev) => {
