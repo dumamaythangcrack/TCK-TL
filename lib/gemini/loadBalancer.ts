@@ -69,6 +69,7 @@ export interface BalancedClientResponse {
   client: GoogleGenAI;
   rawKey: string;
   keyIndex: number;
+  keyName: string;
 }
 
 /**
@@ -138,7 +139,12 @@ export function getBalancedGenAiClient(): BalancedClientResponse {
   const masked = `...${chosenKey.slice(-6)}`;
   console.log(`[LoadBalancer] key#${keyIndex} ${masked} | priority=${stat.priority} | rpm=${stat.lastMinuteRequests} | errs=${stat.errorCount}`);
 
-  return { client: clientsCache[chosenKey], rawKey: chosenKey, keyIndex };
+  return {
+    client: clientsCache[chosenKey],
+    rawKey: chosenKey,
+    keyIndex,
+    keyName: `Key #${keyIndex} (${chosenKey.slice(-6)})`
+  };
 }
 
 /**

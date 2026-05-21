@@ -166,6 +166,14 @@
     animation: shimmer-anim 1.5s infinite;
   }
   
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
   .streaming-cursor::after {
     content: "▋";
     display: inline-block;

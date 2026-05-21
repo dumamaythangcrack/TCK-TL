@@ -80,9 +80,9 @@ export function createGeminiStreamResponse(params: StreamResponseParams): Respon
           const adminSupabase = await createAdminClient();
 
           const tasks: Promise<any>[] = [
-            adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "user", content: prompt }),
-            adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "model", content: aiText }),
-            adminSupabase.from("ai_chats").update({ updated_at: new Date().toISOString() }).eq("id", chatId),
+            adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "user", content: prompt }) as any,
+            adminSupabase.from("ai_messages").insert({ chat_id: chatId, role: "model", content: aiText }) as any,
+            adminSupabase.from("ai_chats").update({ updated_at: new Date().toISOString() }).eq("id", chatId) as any,
           ];
 
           // Auto-generate chat title on first message
@@ -90,7 +90,7 @@ export function createGeminiStreamResponse(params: StreamResponseParams): Respon
             try {
               const title = await generateChatTitle(prompt);
               tasks.push(
-                adminSupabase.from("ai_chats").update({ title }).eq("id", chatId)
+                adminSupabase.from("ai_chats").update({ title }).eq("id", chatId) as any
               );
             } catch (titleErr) {
               console.error("[AI Stream] Title generation error:", titleErr);
@@ -99,10 +99,12 @@ export function createGeminiStreamResponse(params: StreamResponseParams): Respon
 
           // Log request (best effort)
           tasks.push(
-            adminSupabase.from("ai_logs")
-              .insert({ user_id: user.id, prompt: promptBody, response: aiText })
-              .then(() => {})
-              .catch(() => {})
+            (async () => {
+              try {
+                await adminSupabase.from("ai_logs")
+                  .insert({ user_id: user.id, prompt: promptBody, response: aiText });
+              } catch {}
+            })()
           );
 
           await Promise.all(tasks);

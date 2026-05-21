@@ -7,6 +7,7 @@ import {
   getConversationContext,
   callGeminiWithRetry,
   createGeminiStreamResponse,
+  limitFileContext,
 } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ function jsonError(message: string, status = 500) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { chatId, prompt, imagesBase64, fileContext, subject, mode, generateTitle } = body;
+    const { chatId, prompt, imagesBase64, fileContext, subject, mode, generateTitle, preferences } = body;
 
     if (!prompt && (!imagesBase64 || imagesBase64.length === 0)) {
       return jsonError("Nội dung câu hỏi trống.", 400);
@@ -78,9 +79,15 @@ export async function POST(req: NextRequest) {
     // 3. Append current user message turn to history contents
     let promptBody = (prompt || "").slice(0, 6000);
     if (subject) promptBody = `[Môn học: ${subject}] ${promptBody}`;
-    if (fileContext) {
-      const ctx = fileContext.slice(0, 10000);
-      promptBody = `[Tài liệu đính kèm]:\n"""\n${ctx}\n"""\n\n[Yêu cầu]: ${promptBody}`;
+    
+    // Apply TF-IDF context limiter on fileContext relative to user query
+    let finalFileContext = fileContext;
+    if (fileContext && prompt) {
+      finalFileContext = limitFileContext(fileContext, prompt);
+    }
+
+    if (finalFileContext) {
+      promptBody = `[Tài liệu đính kèm]:\n"""\n${finalFileContext}\n"""\n\n[Yêu cầu]: ${promptBody}`;
     }
 
     const currentParts: any[] = [{ text: promptBody }];
@@ -119,10 +126,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. System instructions (Prompts V2)
-    let systemInstruction = getSystemInstruction(mode, subject, profileName, profileBio);
+    let systemInstruction = getSystemInstruction(mode, subject, profileName, profileBio, preferences);
     if (summaryPrompt) {
       systemInstruction += `\n\n${summaryPrompt}`;
     }
+
 
     // 6. Schedule calling Gemini with load-balancing and retry logic
     let streamResult;

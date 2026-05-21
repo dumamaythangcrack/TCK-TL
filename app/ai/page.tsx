@@ -4,13 +4,6 @@ import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   createAiChat,
   getAiChats,
   deleteAiChat,
@@ -49,11 +42,178 @@ import {
   Edit2,
   Search,
   CornerDownRight,
+  Calculator,
+  Languages,
+  Atom,
+  FlaskConical,
+  Dna,
+  BookOpen,
+  ScrollText,
+  Globe,
+  Code2,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+
+// ─── Constants & Configurations ───────────────────────────────────────────────
+
+const SUBJECT_MODES = [
+  { id: "general", label: "AI Chung", icon: "Sparkles", color: "slate" },
+  { id: "math", label: "Toán", icon: "Calculator", color: "blue" },
+  { id: "english", label: "Tiếng Anh", icon: "Languages", color: "emerald" },
+  { id: "physics", label: "Vật Lý", icon: "Atom", color: "purple" },
+  { id: "chemistry", label: "Hóa Học", icon: "FlaskConical", color: "orange" },
+  { id: "biology", label: "Sinh Học", icon: "Dna", color: "green" },
+  { id: "literature", label: "Ngữ Văn", icon: "BookOpen", color: "pink" },
+  { id: "history", label: "Lịch Sử", icon: "ScrollText", color: "amber" },
+  { id: "geography", label: "Địa Lý", icon: "Globe", color: "cyan" },
+  { id: "it", label: "Lập Trình", icon: "Code2", color: "indigo" }
+];
+
+const COLOR_MAP: Record<string, { bg: string; active: string; hover: string; badge: string }> = {
+  slate: {
+    bg: "bg-slate-50 border-slate-200 text-slate-700",
+    active: "bg-slate-900 border-slate-950 text-white shadow-xs",
+    hover: "hover:bg-slate-100 text-slate-800",
+    badge: "bg-slate-100 text-slate-700 border-slate-200"
+  },
+  blue: {
+    bg: "bg-blue-50/50 border-blue-100 text-blue-700",
+    active: "bg-blue-600 border-blue-700 text-white shadow-blue-500/10 shadow-xs",
+    hover: "hover:bg-blue-50 text-blue-700",
+    badge: "bg-blue-50 text-blue-700 border-blue-100"
+  },
+  emerald: {
+    bg: "bg-emerald-50/50 border-emerald-100 text-emerald-700",
+    active: "bg-emerald-600 border-emerald-700 text-white shadow-emerald-500/10 shadow-xs",
+    hover: "hover:bg-emerald-50 text-emerald-700",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-100"
+  },
+  purple: {
+    bg: "bg-purple-50/50 border-purple-100 text-purple-700",
+    active: "bg-purple-600 border-purple-700 text-white shadow-purple-500/10 shadow-xs",
+    hover: "hover:bg-purple-50 text-purple-700",
+    badge: "bg-purple-50 text-purple-700 border-purple-100"
+  },
+  orange: {
+    bg: "bg-orange-50/50 border-orange-100 text-orange-700",
+    active: "bg-orange-500 border-orange-600 text-white shadow-orange-500/10 shadow-xs",
+    hover: "hover:bg-orange-50 text-orange-700",
+    badge: "bg-orange-50 text-orange-700 border-orange-100"
+  },
+  green: {
+    bg: "bg-green-50/50 border-green-100 text-green-700",
+    active: "bg-green-600 border-green-700 text-white shadow-green-500/10 shadow-xs",
+    hover: "hover:bg-green-50 text-green-700",
+    badge: "bg-green-50 text-green-700 border-green-100"
+  },
+  pink: {
+    bg: "bg-pink-50/50 border-pink-100 text-pink-700",
+    active: "bg-pink-600 border-pink-700 text-white shadow-pink-500/10 shadow-xs",
+    hover: "hover:bg-pink-50 text-pink-700",
+    badge: "bg-pink-50 text-pink-700 border-pink-100"
+  },
+  amber: {
+    bg: "bg-amber-50/50 border-amber-100 text-amber-700",
+    active: "bg-amber-500 border-amber-600 text-white shadow-amber-500/10 shadow-xs",
+    hover: "hover:bg-amber-50 text-amber-700",
+    badge: "bg-amber-50 text-amber-700 border-amber-100"
+  },
+  cyan: {
+    bg: "bg-cyan-50/50 border-cyan-100 text-cyan-700",
+    active: "bg-cyan-600 border-cyan-700 text-white shadow-cyan-500/10 shadow-xs",
+    hover: "hover:bg-cyan-50 text-cyan-700",
+    badge: "bg-cyan-50 text-cyan-700 border-cyan-100"
+  },
+  indigo: {
+    bg: "bg-indigo-50/50 border-indigo-100 text-indigo-700",
+    active: "bg-indigo-600 border-indigo-700 text-white shadow-indigo-500/10 shadow-xs",
+    hover: "hover:bg-indigo-50 text-indigo-700",
+    badge: "bg-indigo-50 text-indigo-700 border-indigo-100"
+  }
+};
+
+const SUGGESTED_PROMPTS_BY_SUBJECT: Record<string, string[]> = {
+  general: [
+    "Tạo một thời khóa biểu tự học hiệu quả",
+    "Hướng dẫn phương pháp ghi nhớ từ vựng lâu",
+    "Cách viết bài luận thuyết phục người đọc",
+    "Giải thích phương pháp học tập Pomodoro"
+  ],
+  math: [
+    "Giải hệ phương trình bậc nhất hai ẩn",
+    "Giải thích công thức đạo hàm lượng giác",
+    "Cách chứng minh hai tam giác đồng dạng",
+    "Tính tích phân hàm số f(x) = x^2"
+  ],
+  english: [
+    "Sửa lỗi ngữ pháp đoạn văn tiếng Anh này",
+    "Cách phân biệt thì Hiện tại Hoàn thành & Quá khứ Đơn",
+    "Dịch câu: 'Học tập là một hành trình dài' sang tiếng Anh",
+    "Giải thích cấu trúc câu điều kiện loại 3"
+  ],
+  physics: [
+    "Giải thích định luật vạn vật hấp dẫn",
+    "Tính lực hướng tâm của chuyển động tròn đều",
+    "Cơ chế hoạt động của thấu kính hội tụ",
+    "Giải thích định luật bảo toàn cơ năng"
+  ],
+  chemistry: [
+    "Cân bằng phản ứng oxi hóa khử bất kỳ",
+    "Cách tính nồng độ mol của dung dịch",
+    "Giải thích liên kết cộng hóa trị là gì",
+    "Viết các phương trình điều chế khí Oxi"
+  ],
+  biology: [
+    "Viết sơ đồ lai hai cặp tính trạng Men-đen",
+    "Giải thích quá trình phân bào nguyên phân",
+    "Sự khác nhau giữa tế bào thực vật và động vật",
+    "Cơ chế tự nhân đôi của ADN diễn ra thế nào?"
+  ],
+  literature: [
+    "Dàn ý phân tích diễn biến tâm trạng nhân vật Mị",
+    "Phân tích ý nghĩa hình tượng sóng trong bài thơ Sóng",
+    "Lập dàn ý bài văn nghị luận về tinh thần tự học",
+    "Tóm tắt cốt truyện và thông điệp tác phẩm Lão Hạc"
+  ],
+  history: [
+    "Tóm tắt diễn biến Chiến dịch Điện Biên Phủ 1954",
+    "Ý nghĩa lịch sử của cuộc Cách mạng Tháng Tám 1945",
+    "Nguyên nhân trực tiếp dẫn tới Chiến tranh Thế giới thứ 1",
+    "Dòng thời gian các triều đại phong kiến Việt Nam"
+  ],
+  geography: [
+    "Tại sao khí hậu nước ta mang tính chất nhiệt đới gió mùa?",
+    "Phân tích ảnh hưởng của địa hình đến sông ngòi",
+    "Giải thích sự hình thành hiện tượng El Nino và La Nina",
+    "Đặc điểm phát triển kinh tế vùng Đồng bằng sông Hồng"
+  ],
+  it: [
+    "Giải thích khái niệm Async/Await trong JavaScript",
+    "Viết thuật toán tìm kiếm nhị phân bằng TypeScript",
+    "Cách thiết kế cơ sở dữ liệu cho app bán hàng",
+    "Sự khác nhau giữa REST API và GraphQL"
+  ]
+};
+
+const SubjectIcon = ({ iconName, className }: { iconName: string; className?: string }) => {
+  switch (iconName) {
+    case "Sparkles": return <Sparkles className={className} />;
+    case "Calculator": return <Calculator className={className} />;
+    case "Languages": return <Languages className={className} />;
+    case "Atom": return <Atom className={className} />;
+    case "FlaskConical": return <FlaskConical className={className} />;
+    case "Dna": return <Dna className={className} />;
+    case "BookOpen": return <BookOpen className={className} />;
+    case "ScrollText": return <ScrollText className={className} />;
+    case "Globe": return <Globe className={className} />;
+    case "Code2": return <Code2 className={className} />;
+    default: return <Sparkles className={className} />;
+  }
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,7 +223,9 @@ interface AttachedFile {
   type: string;
   base64?: string;
   textContext?: string;
+  status?: "pending" | "parsing" | "parsed" | "error";
 }
+
 
 interface Message {
   role: "user" | "model";
@@ -261,7 +423,11 @@ export default function AiHubPage() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [prompt, setPrompt] = useState("");
-  const [selectedSubject, setSelectedSubject] = useState("");
+  const [currentSubjectMode, setCurrentSubjectMode] = useState<string>("general");
+  const [preferences, setPreferences] = useState<{ length: "concise" | "detailed"; tone: "friendly" | "academic" }>({
+    length: "detailed",
+    tone: "friendly"
+  });
   const [learningMode, setLearningMode] = useState<"chat" | "summarize" | "quiz" | "notes">("chat");
   const [subjects, setSubjects] = useState<any[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
@@ -358,7 +524,7 @@ export default function AiHubPage() {
     }
   };
 
-  // ── Auth init ───────────────────────────────────────────────────────────────
+  // ── Auth & Preferences init ──────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setIsHistoryOpen(false);
@@ -370,6 +536,16 @@ export default function AiHubPage() {
       if (stored) {
         try {
           setPinnedChatIds(JSON.parse(stored));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      // Load tone/length preferences
+      const storedPrefs = localStorage.getItem("tck_ai_preferences");
+      if (storedPrefs) {
+        try {
+          setPreferences(JSON.parse(storedPrefs));
         } catch (e) {
           console.error(e);
         }
@@ -418,6 +594,43 @@ export default function AiHubPage() {
     return () => subscription.unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync active chat subject mode from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (activeChatId) {
+        const storedChatSubject = localStorage.getItem(`tck_chat_subject_${activeChatId}`);
+        if (storedChatSubject) {
+          setCurrentSubjectMode(storedChatSubject);
+        } else {
+          const globalSubject = localStorage.getItem("tck_current_subject_mode") || "general";
+          setCurrentSubjectMode(globalSubject);
+        }
+      } else {
+        const globalSubject = localStorage.getItem("tck_current_subject_mode") || "general";
+        setCurrentSubjectMode(globalSubject);
+      }
+    }
+  }, [activeChatId]);
+
+  const selectSubjectMode = (modeId: string) => {
+    setCurrentSubjectMode(modeId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("tck_current_subject_mode", modeId);
+      if (activeChatId) {
+        localStorage.setItem(`tck_chat_subject_${activeChatId}`, modeId);
+      }
+    }
+  };
+
+  const updatePreference = (key: "length" | "tone", value: string) => {
+    const next = { ...preferences, [key]: value };
+    setPreferences(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("tck_ai_preferences", JSON.stringify(next));
+    }
+  };
+
 
   // ── Scroll to bottom ────────────────────────────────────────────────────────
   const scrollToBottom = useCallback(() => {
@@ -624,25 +837,74 @@ export default function AiHubPage() {
 
   // ─── File handling ────────────────────────────────────────────────────────────
 
-  const processUploadedFiles = (files: File[]) => {
-    files.forEach((file) => {
+  // ─── File handling ────────────────────────────────────────────────────────────
+
+  const processUploadedFiles = async (files: File[]) => {
+    for (const file of files) {
       if (file.size > 52_428_800) {
         toast.error(`"${file.name}" vượt quá 50MB.`);
-        return;
+        continue;
       }
       const isImg = file.type.startsWith("image/");
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAttachedFiles((prev) => [
-          ...prev,
-          isImg
-            ? { name: file.name, size: file.size, type: file.type, base64: reader.result as string }
-            : { name: file.name, size: file.size, type: file.type, textContext: reader.result as string },
-        ]);
-      };
-      if (isImg) reader.readAsDataURL(file);
-      else reader.readAsText(file.slice(0, 20_000));
-    });
+      if (isImg) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setAttachedFiles((prev) => [
+            ...prev,
+            { name: file.name, size: file.size, type: file.type, base64: reader.result as string, status: "parsed" },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // Document parsing via API
+        const newFile: AttachedFile = {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          status: "parsing",
+        };
+        setAttachedFiles((prev) => [...prev, newFile]);
+
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+
+          const res = await fetch("/api/ai/parse-file", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || "Không thể trích xuất tệp.");
+          }
+
+          const data = await res.json();
+          if (data.success) {
+            setAttachedFiles((prev) =>
+              prev.map((f) =>
+                f.name === file.name && f.status === "parsing"
+                  ? { ...f, textContext: data.text, status: "parsed" }
+                  : f
+              )
+            );
+            toast.success(`Đã xử lý xong tệp: ${file.name}`);
+          } else {
+            throw new Error(data.error);
+          }
+        } catch (error: any) {
+          console.error(error);
+          toast.error(`Lỗi trích xuất tệp ${file.name}: ${error.message || error}`);
+          setAttachedFiles((prev) =>
+            prev.map((f) =>
+              f.name === file.name && f.status === "parsing"
+                ? { ...f, status: "error" }
+                : f
+            )
+          );
+        }
+      }
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -677,6 +939,12 @@ export default function AiHubPage() {
       toast.info("Đang nhận phản hồi, tin nhắn mới đã được thêm vào hàng đợi...");
       pendingQueue.current.push(text);
       setPrompt("");
+      return;
+    }
+
+    const hasParsing = attachedFiles.some((f) => f.status === "parsing");
+    if (hasParsing) {
+      toast.warning("Hệ thống đang trích xuất nội dung tệp của bạn, vui lòng đợi trong giây lát!");
       return;
     }
 
@@ -726,8 +994,9 @@ export default function AiHubPage() {
           prompt: text,
           imagesBase64,
           fileContext: combinedDocsContext || undefined,
-          subject: selectedSubject || undefined,
+          subject: currentSubjectMode !== "general" ? currentSubjectMode : undefined,
           mode: learningMode,
+          preferences,
         }),
         signal: controller.signal,
       });
@@ -1141,6 +1410,30 @@ export default function AiHubPage() {
           </div>
         </header>
 
+        {/* Horizontal AI Mode Selector */}
+        <div className="bg-white/60 backdrop-blur-md border-b border-black/[0.05] px-4 py-2.5 flex gap-2 overflow-x-auto scrollbar-none shrink-0 items-center select-none z-10">
+          <div className="flex gap-2 max-w-7xl mx-auto w-full md:px-2">
+            {SUBJECT_MODES.map((mode) => {
+              const colors = COLOR_MAP[mode.color] || COLOR_MAP.slate;
+              const isActive = currentSubjectMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => selectSubjectMode(mode.id)}
+                  className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold cursor-pointer transition-all duration-200 whitespace-nowrap shrink-0 ${
+                    isActive
+                      ? `${colors.active} scale-[1.02] border-transparent`
+                      : `${colors.bg} border-slate-150 text-slate-650 hover:bg-slate-100 hover:scale-[1.01] active:scale-[0.99]`
+                  }`}
+                >
+                  <SubjectIcon iconName={mode.icon} className="h-3.5 w-3.5 shrink-0" />
+                  <span>{mode.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/20">
           {!isAiReady ? (
@@ -1197,41 +1490,26 @@ export default function AiHubPage() {
                 </p>
               </div>
 
-              {/* Settings panel */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white border border-black/[0.05] p-5 rounded-2xl shadow-3xs">
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1">
-                    <GraduationCap className="h-3.5 w-3.5 text-slate-500" /> Chọn môn học
-                  </Label>
-                  <Select value={selectedSubject} onValueChange={(val) => setSelectedSubject(val || "")}>
-                    <SelectTrigger className="bg-slate-50/50 border-slate-200/80 text-slate-700 rounded-xl h-10 text-xs">
-                      <SelectValue placeholder="Toán học, Vật lý, Tiếng Anh..." />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200 text-slate-800">
-                      {subjects.map((sub) => (
-                        <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider flex items-center gap-1">
-                    <Sparkles className="h-3.5 w-3.5 text-slate-500" /> Chế độ học tập
-                  </Label>
-                  <div className="grid grid-cols-2 gap-1 bg-slate-50/50 p-1 rounded-xl border border-slate-200/60">
-                    {(["chat", "summarize", "quiz", "notes"] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setLearningMode(m)}
-                        className={`py-1.5 text-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          learningMode === m ? "bg-white text-slate-900 shadow-3xs border border-black/[0.04]" : "text-slate-500 hover:text-slate-800"
-                        }`}
-                      >
-                        {m === "chat" ? "Giải bài & Chat" : m === "summarize" ? "Tóm tắt" : m === "quiz" ? "Trắc nghiệm" : "Ghi chú"}
-                      </button>
-                    ))}
-                  </div>
+              {/* Suggested Prompts Grid */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 justify-center">
+                  <Sparkles className="h-3.5 w-3.5 text-blue-500" /> Gợi ý câu hỏi dành cho bạn
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(SUGGESTED_PROMPTS_BY_SUBJECT[currentSubjectMode] || SUGGESTED_PROMPTS_BY_SUBJECT.general).map((pText) => (
+                    <button
+                      key={pText}
+                      onClick={() => sendMessage(pText)}
+                      className="bg-white border border-black/[0.05] p-4 rounded-2xl hover:border-blue-500/30 hover:shadow-xs text-left transition-all duration-200 group/suggest cursor-pointer"
+                    >
+                      <p className="text-xs font-bold text-slate-800 group-hover/suggest:text-blue-600 line-clamp-2 leading-relaxed">
+                        {pText}
+                      </p>
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-400 mt-2 group-hover/suggest:text-blue-500 transition-colors">
+                        Thử ngay <CornerDownRight className="h-3 w-3" />
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1290,15 +1568,52 @@ export default function AiHubPage() {
                       </div>
                     )}
                     <div className="absolute inset-0 bg-slate-900/10 group-hover:bg-slate-900/30 transition z-1" />
+                    
+                    {/* Status Overlays */}
+                    {file.status === "parsing" && (
+                      <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center z-2">
+                        <Loader2 className="animate-spin text-blue-600 h-5 w-5" />
+                        <span className="text-[8px] font-extrabold text-blue-700 mt-1 uppercase tracking-wider animate-pulse">Đang quét...</span>
+                      </div>
+                    )}
+                    {file.status === "error" && (
+                      <div className="absolute inset-0 bg-rose-50/95 flex flex-col items-center justify-center z-2 border border-rose-250">
+                        <X className="h-5 w-5 text-rose-600" />
+                        <span className="text-[8px] font-extrabold text-rose-700 mt-1 uppercase tracking-wider">Lỗi đọc file</span>
+                      </div>
+                    )}
+
                     <button type="button" onClick={() => setAttachedFiles((p) => p.filter((_, j) => j !== i))} className="absolute top-1 right-1 h-5 w-5 rounded-full bg-slate-900/50 hover:bg-slate-900 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 z-10 cursor-pointer transition">
                       <X className="h-3 w-3" />
                     </button>
-                    {file.base64 && (
+                    {file.base64 && file.status !== "parsing" && (
                       <button type="button" onClick={() => setZoomImage(file.base64!)} className="absolute bottom-1 left-1 h-5 w-5 rounded-full bg-slate-900/50 hover:bg-slate-900 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 z-10 cursor-pointer transition">
                         <Maximize2 className="h-2.5 w-2.5" />
                       </button>
                     )}
                   </div>
+                ))}
+              </div>
+            )}
+
+            {/* Quick Actions (Pill row above input form) */}
+            {messages.length > 0 && !isSending && (
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1 flex-nowrap md:flex-wrap">
+                {[
+                  { label: "💡 Giải thích dễ hơn", prompt: "Hãy giải thích nội dung trên một cách dễ hiểu hơn, có ví dụ thực tế minh họa." },
+                  { label: "📝 Tóm tắt", prompt: "Hãy tóm tắt ngắn gọn các ý chính của câu trả lời trước." },
+                  { label: "⚡ Viết ngắn hơn", prompt: "Hãy viết lại câu trả lời trên một cách ngắn gọn, súc tích và tập trung vào đáp án." },
+                  { label: "⏭️ Tiếp tục", prompt: "Hãy tiếp tục viết tiếp phần nội dung còn dang dở." },
+                  { label: "🎴 Tạo flashcards", prompt: "Hãy tạo danh sách flashcards ghi nhớ (Câu hỏi - Câu trả lời) dựa trên thông tin trên." }
+                ].map((act) => (
+                  <button
+                    key={act.label}
+                    type="button"
+                    onClick={() => sendMessage(act.prompt)}
+                    className="px-2.5 py-1 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-350 text-[10px] font-bold text-slate-650 transition cursor-pointer whitespace-nowrap shadow-3xs hover:shadow-2xs active:scale-95 animate-fade-in"
+                  >
+                    {act.label}
+                  </button>
                 ))}
               </div>
             )}
@@ -1325,32 +1640,86 @@ export default function AiHubPage() {
                 !isAiReady ? "animate-pulse border-slate-100" : ""
               }`}
             >
-              {/* Toolbar row */}
-              {messages.length > 0 && (
-                <div className="flex items-center gap-1.5 px-3 pt-2 pb-1.5 border-b border-slate-100/60 flex-wrap">
-                  <Select value={selectedSubject} onValueChange={(val) => setSelectedSubject(val || "")}>
-                    <SelectTrigger className="border-0 bg-transparent text-slate-500 hover:text-slate-800 rounded-lg h-7 text-[10px] w-auto max-w-[120px] gap-1 px-1.5 font-bold focus:ring-0">
-                      <SelectValue placeholder="Môn học" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200 text-slate-800 text-xs">
-                      <SelectItem value="none">Không môn học</SelectItem>
-                      {subjects.map((sub) => <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <div className="h-3 w-px bg-slate-200 mx-1" />
-                  <Select value={learningMode} onValueChange={(val: any) => setLearningMode(val)}>
-                    <SelectTrigger className="border-0 bg-transparent text-slate-500 hover:text-slate-800 rounded-lg h-7 text-[10px] w-auto gap-1 px-1.5 font-bold focus:ring-0">
-                      <SelectValue placeholder="Chế độ học" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200 text-slate-800 text-xs">
-                      <SelectItem value="chat">Giải bài & Chat</SelectItem>
-                      <SelectItem value="summarize">Tóm tắt tài liệu</SelectItem>
-                      <SelectItem value="quiz">Tạo trắc nghiệm</SelectItem>
-                      <SelectItem value="notes">Soạn ghi chú</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Toolbar row (Settings & Mode options) */}
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2 border-b border-slate-100/80 bg-slate-50/50 flex-wrap">
+                {/* Learning Modes button group */}
+                <div className="flex items-center gap-0.5 bg-slate-200/60 p-0.5 rounded-lg shrink-0 select-none">
+                  {[
+                    { id: "chat", label: "Giải bài" },
+                    { id: "summarize", label: "Tóm tắt" },
+                    { id: "quiz", label: "Trắc nghiệm" },
+                    { id: "notes", label: "Ghi chú" }
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setLearningMode(m.id as any)}
+                      className={`px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold transition cursor-pointer ${
+                        learningMode === m.id
+                          ? "bg-white text-slate-800 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
                 </div>
-              )}
+
+                {/* Preferences Controls */}
+                <div className="flex items-center gap-2 select-none flex-wrap sm:flex-nowrap">
+                  {/* Length Toggle */}
+                  <div className="flex items-center gap-0.5 bg-slate-200/60 p-0.5 rounded-lg shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => updatePreference("length", "concise")}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition cursor-pointer ${
+                        preferences.length === "concise"
+                          ? "bg-white text-slate-800 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Ngắn gọn
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updatePreference("length", "detailed")}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition cursor-pointer ${
+                        preferences.length === "detailed"
+                          ? "bg-white text-slate-800 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Chi tiết
+                    </button>
+                  </div>
+
+                  {/* Tone Toggle */}
+                  <div className="flex items-center gap-0.5 bg-slate-200/60 p-0.5 rounded-lg shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => updatePreference("tone", "friendly")}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition cursor-pointer ${
+                        preferences.tone === "friendly"
+                          ? "bg-white text-slate-800 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Thân thiện
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updatePreference("tone", "academic")}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition cursor-pointer ${
+                        preferences.tone === "academic"
+                          ? "bg-white text-slate-800 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Học thuật
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {/* Text + actions row */}
               <div className="flex items-end gap-2 p-2 px-3">
