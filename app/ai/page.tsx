@@ -15,6 +15,7 @@ import {
   getAiChats,
   deleteAiChat,
   getAiMessages,
+  renameAiChat,
 } from "@/actions/ai";
 import { getSubjects } from "@/actions/taxonomy";
 import MarkdownRenderer from "@/components/viewers/MarkdownRenderer";
@@ -40,6 +41,14 @@ import {
   Copy,
   RotateCw,
   Square,
+  Pin,
+  Volume2,
+  VolumeX,
+  ThumbsUp,
+  ThumbsDown,
+  Edit2,
+  Search,
+  CornerDownRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
@@ -71,17 +80,25 @@ const MessageBubble = memo(function MessageBubble({
   isLast,
   onCopy,
   onRegenerate,
+  onContinue,
+  speakingIndex,
+  onSpeakToggle,
 }: {
   msg: Message;
   index: number;
   isLast: boolean;
   onCopy: (text: string) => void;
   onRegenerate: () => void;
+  onContinue: () => void;
+  speakingIndex: number | null;
+  onSpeakToggle: (index: number, text: string) => void;
 }) {
   const isUser = msg.role === "user";
+  const [feedback, setFeedback] = useState<"like" | "dislike" | null>(null);
+  const isSpeaking = speakingIndex === index;
 
   return (
-    <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`group relative flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
       {/* AI avatar */}
       {!isUser && (
         <div className="h-8 w-8 rounded-xl bg-white border border-black/[0.05] flex items-center justify-center shrink-0 shadow-3xs select-none mt-0.5">
@@ -105,14 +122,11 @@ const MessageBubble = memo(function MessageBubble({
               {msg.content}
             </p>
           ) : msg.isStreaming && !msg.content ? (
-            /* Loading dots when content empty */
-            <div className="flex items-center gap-2 py-0.5">
-              <div className="flex gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:0ms]" />
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:150ms]" />
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:300ms]" />
-              </div>
-              <span className="text-slate-500 font-medium text-[11px]">Đang suy nghĩ...</span>
+            /* Premium shimmer loading skeleton */
+            <div className="space-y-2.5 w-64 md:w-80 py-1">
+              <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-3/4" />
+              <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-full" />
+              <div className="h-3.5 bg-slate-200/80 rounded-lg animate-pulse w-5/6" />
             </div>
           ) : (
             <div className={isLast && msg.isStreaming ? "streaming-cursor" : ""}>
@@ -121,23 +135,76 @@ const MessageBubble = memo(function MessageBubble({
           )}
         </div>
 
-        {/* Action buttons for AI messages */}
+        {/* Premium action toolbar for AI messages */}
         {!isUser && msg.content && !msg.isStreaming && (
-          <div className="flex gap-1.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/80 backdrop-blur-md border border-black/[0.04] p-1 rounded-xl w-fit shadow-3xs">
+            {/* Copy Button */}
             <button
               onClick={() => onCopy(msg.content)}
-              className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-700 bg-white hover:bg-slate-50 border border-slate-150 px-2 py-1 rounded-lg transition font-semibold"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+              title="Sao chép câu trả lời"
             >
-              <Copy className="h-3 w-3" />
-              Sao chép
+              <Copy className="h-3.5 w-3.5" />
             </button>
+
+            {/* Speech/TTS Button */}
+            <button
+              onClick={() => onSpeakToggle(index, msg.content)}
+              className={`p-1.5 rounded-lg transition ${
+                isSpeaking ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              }`}
+              title={isSpeaking ? "Dừng đọc" : "Đọc thành tiếng"}
+            >
+              {isSpeaking ? (
+                <VolumeX className="h-3.5 w-3.5 animate-pulse" />
+              ) : (
+                <Volume2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+
+            {/* Like Feedback */}
+            <button
+              onClick={() => setFeedback(feedback === "like" ? null : "like")}
+              className={`p-1.5 rounded-lg transition ${
+                feedback === "like" ? "text-emerald-600 bg-emerald-50" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              }`}
+              title="Hữu ích"
+            >
+              <ThumbsUp className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Dislike Feedback */}
+            <button
+              onClick={() => setFeedback(feedback === "dislike" ? null : "dislike")}
+              className={`p-1.5 rounded-lg transition ${
+                feedback === "dislike" ? "text-rose-600 bg-rose-50" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              }`}
+              title="Không hữu ích"
+            >
+              <ThumbsDown className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Continue writing (only on last message) */}
+            {isLast && (
+              <button
+                onClick={onContinue}
+                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition flex items-center gap-1 text-[10px] font-bold"
+                title="Viết tiếp câu trả lời"
+              >
+                <CornerDownRight className="h-3.5 w-3.5" />
+                <span>Viết tiếp</span>
+              </button>
+            )}
+
+            {/* Regenerate (only on last message) */}
             {isLast && (
               <button
                 onClick={onRegenerate}
-                className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-700 bg-white hover:bg-slate-50 border border-slate-150 px-2 py-1 rounded-lg transition font-semibold"
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition flex items-center gap-1 text-[10px] font-bold"
+                title="Tạo lại câu trả lời"
               >
-                <RotateCw className="h-3 w-3" />
-                Tạo lại
+                <RotateCw className="h-3.5 w-3.5" />
+                <span>Thử lại</span>
               </button>
             )}
           </div>
@@ -177,6 +244,13 @@ export default function AiHubPage() {
   const [zoomImage, setZoomImage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Sidebar V2 States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [pinnedChatIds, setPinnedChatIds] = useState<string[]>([]);
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -198,6 +272,9 @@ export default function AiHubPage() {
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      if (typeof window !== "undefined") {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
 
@@ -205,6 +282,18 @@ export default function AiHubPage() {
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setIsHistoryOpen(false);
+    }
+
+    // Load pinned chats from localStorage
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("tck_pinned_chats");
+      if (stored) {
+        try {
+          setPinnedChatIds(JSON.parse(stored));
+        } catch (e) {
+          console.error(e);
+        }
+      }
     }
 
     async function init() {
@@ -306,6 +395,106 @@ export default function AiHubPage() {
       toast.error("Xóa thất bại.");
     }
   };
+
+  // Sidebar V2 Logic
+  const handleRenameStart = (chatId: string, currentTitle: string) => {
+    setEditingChatId(chatId);
+    setEditingTitle(currentTitle);
+  };
+
+  const handleRenameSave = async (chatId: string) => {
+    if (!editingTitle.trim()) {
+      setEditingChatId(null);
+      return;
+    }
+    try {
+      await renameAiChat(chatId, editingTitle.trim());
+      setChats((prev) => prev.map((c) => c.id === chatId ? { ...c, title: editingTitle.trim() } : c));
+      toast.success("Đã đổi tên cuộc hội thoại.");
+    } catch {
+      toast.error("Đổi tên thất bại.");
+    } finally {
+      setEditingChatId(null);
+    }
+  };
+
+  const togglePinChat = (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+    setPinnedChatIds((prev) => {
+      const next = prev.includes(chatId)
+        ? prev.filter((id) => id !== chatId)
+        : [...prev, chatId];
+      localStorage.setItem("tck_pinned_chats", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const getGroupedChats = () => {
+    const filtered = chats.filter((c) =>
+      c.title.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const pinned = filtered.filter((c) => pinnedChatIds.includes(c.id));
+    const unpinned = filtered.filter((c) => !pinnedChatIds.includes(c.id));
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const groups: { [key: string]: { label: string; items: any[] } } = {
+      pinned: { label: "Đã ghim", items: pinned },
+      today: { label: "Hôm nay", items: [] },
+      yesterday: { label: "Hôm qua", items: [] },
+      last7Days: { label: "7 ngày qua", items: [] },
+      older: { label: "Cũ hơn", items: [] },
+    };
+
+    unpinned.forEach((c) => {
+      const d = new Date(c.updated_at || c.created_at);
+      d.setHours(0, 0, 0, 0);
+
+      if (d.getTime() === today.getTime()) {
+        groups.today.items.push(c);
+      } else if (d.getTime() === yesterday.getTime()) {
+        groups.yesterday.items.push(c);
+      } else if (d.getTime() >= sevenDaysAgo.getTime()) {
+        groups.last7Days.items.push(c);
+      } else {
+        groups.older.items.push(c);
+      }
+    });
+
+    return groups;
+  };
+
+  // Message Actions Logic
+  const handleSpeakToggle = useCallback((index: number, text: string) => {
+    if (speakingIndex === index) {
+      window.speechSynthesis.cancel();
+      setSpeakingIndex(null);
+    } else {
+      window.speechSynthesis.cancel();
+      const plainText = text
+        .replace(/[\*\#\`\_\[\]\(\)\$]/g, "")
+        .replace(/\$\$[\s\S]*?\$\$/g, "");
+      const utterance = new SpeechSynthesisUtterance(plainText);
+      utterance.lang = "vi-VN";
+      utterance.onend = () => setSpeakingIndex(null);
+      utterance.onerror = () => setSpeakingIndex(null);
+      window.speechSynthesis.speak(utterance);
+      setSpeakingIndex(index);
+    }
+  }, [speakingIndex]);
+
+  const handleContinue = useCallback(() => {
+    sendMessage("Hãy viết tiếp câu trả lời của bạn.");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
 
   const handleStopGeneration = () => {
     abortControllerRef.current?.abort();
@@ -555,6 +744,28 @@ export default function AiHubPage() {
                   <Plus className="h-4 w-4" />
                   {isCreatingChat ? "Đang tạo..." : "Cuộc hội thoại mới"}
                 </Button>
+
+                {/* Search Bar */}
+                {isLoggedIn && chats.length > 0 && (
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Tìm cuộc hội thoại..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-50 transition"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-700"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Chat list */}
@@ -585,30 +796,90 @@ export default function AiHubPage() {
                     <p className="text-[10px] font-semibold text-slate-400">Chưa có cuộc hội thoại nào</p>
                   </div>
                 ) : (
-                  chats.map((c) => (
-                    <div
-                      key={c.id}
-                      onClick={() => { setActiveChatId(c.id); if (window.innerWidth < 768) setIsHistoryOpen(false); }}
-                      className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-                        activeChatId === c.id
-                          ? "bg-blue-50 text-blue-700 border border-blue-100"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <MessageSquare className={`h-4 w-4 shrink-0 ${activeChatId === c.id ? "text-blue-600" : "text-slate-400"}`} />
-                        <span className="truncate">{c.title}</span>
-                      </div>
-                      <Button
-                        onClick={(e) => handleDeleteChat(e, c.id)}
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition shrink-0"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))
+                  (() => {
+                    const grouped = getGroupedChats();
+                    const hasItems = Object.values(grouped).some((g) => g.items.length > 0);
+                    if (!hasItems) {
+                      return (
+                        <div className="text-center mt-8 space-y-2">
+                          <p className="text-[10px] font-semibold text-slate-400">Không tìm thấy cuộc hội thoại nào</p>
+                        </div>
+                      );
+                    }
+                    return Object.entries(grouped).map(([key, group]) => {
+                      if (group.items.length === 0) return null;
+                      return (
+                        <div key={key} className="space-y-1 mb-4">
+                          <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider select-none flex items-center gap-1">
+                            {key === "pinned" && <Pin className="h-2.5 w-2.5 text-blue-500 fill-current shrink-0" />}
+                            {group.label}
+                          </div>
+                          {group.items.map((c) => (
+                            <div key={c.id}>
+                              {editingChatId === c.id ? (
+                                <div className="px-2 py-1">
+                                  <input
+                                    type="text"
+                                    value={editingTitle}
+                                    onChange={(e) => setEditingTitle(e.target.value)}
+                                    onBlur={() => handleRenameSave(c.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") handleRenameSave(c.id);
+                                      else if (e.key === "Escape") setEditingChatId(null);
+                                    }}
+                                    autoFocus
+                                    className="w-full bg-white border border-blue-500 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none"
+                                  />
+                                </div>
+                              ) : (
+                                <div
+                                  onClick={() => { setActiveChatId(c.id); if (window.innerWidth < 768) setIsHistoryOpen(false); }}
+                                  className={`group/item w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all border border-transparent ${
+                                    activeChatId === c.id
+                                      ? "bg-blue-50 text-blue-700 border-blue-100/60 shadow-3xs"
+                                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 truncate flex-1 min-w-0 mr-1">
+                                    <MessageSquare className={`h-4 w-4 shrink-0 ${activeChatId === c.id ? "text-blue-600" : "text-slate-400"}`} />
+                                    <span
+                                      className="truncate"
+                                      onDoubleClick={() => handleRenameStart(c.id, c.title)}
+                                    >
+                                      {c.title}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity duration-150 shrink-0">
+                                    <button
+                                      onClick={(e) => togglePinChat(e, c.id)}
+                                      className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition"
+                                      title={pinnedChatIds.includes(c.id) ? "Bỏ ghim" : "Ghim hội thoại"}
+                                    >
+                                      <Pin className={`h-3 w-3 ${pinnedChatIds.includes(c.id) ? "text-blue-600 fill-current" : ""}`} />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleRenameStart(c.id, c.title); }}
+                                      className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition"
+                                      title="Đổi tên"
+                                    >
+                                      <Edit2 className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => handleDeleteChat(e, c.id)}
+                                      className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition"
+                                      title="Xóa"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    });
+                  })()
                 )}
               </div>
 
@@ -789,6 +1060,9 @@ export default function AiHubPage() {
                   isLast={i === messages.length - 1}
                   onCopy={handleCopyMessage}
                   onRegenerate={handleRegenerate}
+                  onContinue={handleContinue}
+                  speakingIndex={speakingIndex}
+                  onSpeakToggle={handleSpeakToggle}
                 />
               ))}
               <div ref={messagesEndRef} />

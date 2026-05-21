@@ -1,6 +1,7 @@
 import { Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import PwaRegister from "@/components/providers/PwaRegister";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -28,6 +29,7 @@ export const metadata: Metadata = {
   title: "TCK Tài Liệu | Chia sẻ Đề thi & Giáo án Miễn Phí",
   description: "Nền tảng chia sẻ, lưu trữ tài liệu học tập phi lợi nhuận cho cộng đồng Việt Nam. Tích hợp AI giải bài tập thông minh.",
   metadataBase: new URL(getSiteUrl()),
+  manifest: "/manifest.json",
   openGraph: {
     title: "TCK Tài Liệu | Nền tảng chia sẻ học tập thế hệ mới",
     description: "Chia sẻ giáo án, đề thi và hỗ trợ giải bài tập bằng công nghệ AI Gemini 3.0 Flash.",
@@ -47,10 +49,12 @@ export default function RootLayout({
       className={`${inter.variable} ${geist.variable} h-full antialiased font-sans`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <PwaRegister />
         {children}
         <Toaster richColors theme="light" position="top-center" closeButton />
       </body>
     </html>
   );
 }
+
 

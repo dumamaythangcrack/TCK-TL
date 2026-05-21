@@ -119,6 +119,32 @@ export async function deleteAiChat(chatId: string) {
 }
 
 /**
+ * Renames a chat thread.
+ */
+export async function renameAiChat(chatId: string, title: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Unauthorized.");
+
+  const { data, error } = await supabase
+    .from("ai_chats")
+    .update({ title: title || "Cuộc trò chuyện mới", updated_at: new Date().toISOString() })
+    .eq("id", chatId)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Rename AI Chat Error:", error);
+    throw new Error("Failed to rename chat thread.");
+  }
+
+  return data;
+}
+
+
+/**
  * Gets messages in a chat thread.
  */
 export async function getAiMessages(chatId: string) {

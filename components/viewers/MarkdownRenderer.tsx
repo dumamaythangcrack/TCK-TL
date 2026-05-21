@@ -1,6 +1,4 @@
-"use client";
-
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,6 +9,36 @@ interface MarkdownRendererProps {
 interface CodeBlockProps {
   language: string;
   code: string;
+}
+
+// Global KaTeX loader logic
+let katexLoadingPromise: Promise<any> | null = null;
+
+function loadKatex(): Promise<any> {
+  if (typeof window === "undefined") return Promise.reject();
+  if ((window as any).katex) return Promise.resolve((window as any).katex);
+
+  if (!katexLoadingPromise) {
+    katexLoadingPromise = new Promise((resolve, reject) => {
+      // 1. Add CSS
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css";
+      document.head.appendChild(link);
+
+      // 2. Add JS
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js";
+      script.onload = () => {
+        resolve((window as any).katex);
+      };
+      script.onerror = () => {
+        reject(new Error("Failed to load KaTeX script"));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return katexLoadingPromise;
 }
 
 // VSCode-style dark theme code block for premium contrast
@@ -46,7 +74,14 @@ const CodeBlock = React.memo(({ language, code }: CodeBlockProps) => {
 CodeBlock.displayName = "CodeBlock";
 
 const MarkdownRenderer = React.memo(({ content }: MarkdownRendererProps) => {
-  
+  const [katexLoaded, setKatexLoaded] = useState(false);
+
+  useEffect(() => {
+    loadKatex()
+      .then(() => setKatexLoaded(true))
+      .catch((err) => console.error("KaTeX failed to load:", err));
+  }, []);
+
   // Parse bold (**bold**), inline code (`code`), inline math ($math$), and links ([text](url))
   const parseInlineElements = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*|`.*?`|\$.*?\$|\[.*?\]\(.*?\))/g);
@@ -66,9 +101,27 @@ const MarkdownRenderer = React.memo(({ content }: MarkdownRendererProps) => {
         );
       }
       if (part.startsWith("$") && part.endsWith("$")) {
+        const math = part.slice(1, -1);
+        if (katexLoaded && (window as any).katex) {
+          try {
+            const html = (window as any).katex.renderToString(math, {
+              displayMode: false,
+              throwOnError: false,
+            });
+            return (
+              <span
+                key={index}
+                dangerouslySetInnerHTML={{ __html: html }}
+                className="inline-math px-0.5"
+              />
+            );
+          } catch (e) {
+            console.error("Error rendering inline math with KaTeX:", e);
+          }
+        }
         return (
           <span key={index} className="font-serif italic text-blue-600 bg-blue-50/50 px-1 rounded">
-            {part.slice(1, -1)}
+            {math}
           </span>
         );
       }
@@ -149,6 +202,23 @@ const MarkdownRenderer = React.memo(({ content }: MarkdownRendererProps) => {
       // 2. LaTeX Block parsing
       if (block.startsWith("$$")) {
         const mathContent = block.replace(/\$\$/g, "").trim();
+        if (katexLoaded && (window as any).katex) {
+          try {
+            const html = (window as any).katex.renderToString(mathContent, {
+              displayMode: true,
+              throwOnError: false,
+            });
+            return (
+              <div
+                key={index}
+                dangerouslySetInnerHTML={{ __html: html }}
+                className="my-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100 overflow-x-auto shadow-3xs text-center"
+              />
+            );
+          } catch (e) {
+            console.error("Error rendering block math with KaTeX:", e);
+          }
+        }
         return (
           <div key={index} className="my-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100 text-center font-serif text-sm text-blue-800 overflow-x-auto shadow-3xs">
             {mathContent}
@@ -254,7 +324,7 @@ const MarkdownRenderer = React.memo(({ content }: MarkdownRendererProps) => {
 
       return <div key={index} className="space-y-1.5">{elements}</div>;
     });
-  }, [content]);
+  }, [content, katexLoaded]);
 
   return <div className="prose prose-slate max-w-none font-chat leading-relaxed">{parsedContent}</div>;
 });
